@@ -1,0 +1,6 @@
+#!/bin/zsh
+set -eu
+cd "${0:A:h:h}"
+mkdir -p .build/clang-cache .build/swiftpm-cache
+export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
+exec swift "${1:-build}" --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox

@@ -1,0 +1,48 @@
+#!/bin/zsh
+set -eu
+cd "${0:A:h:h}"
+mkdir -p .build/clang-cache .build/swiftpm-cache
+export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
+# The version lives in VERSION; releases are tagged v<VERSION>. BUILD_NUMBER is set by CI.
+version=$(tr -d '[:space:]' < VERSION)
+build_number=${BUILD_NUMBER:-1}
+scripts/build-bridge
+swift build -c release --product crossover-ffb --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox
+swift build -c release --product CrossoverFFBApp --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox
+binary_dir="$(swift build -c release --show-bin-path --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox)"
+app_dir="$PWD/dist/crossover-ffb.app"
+mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+cp "$binary_dir/CrossoverFFBApp" "$app_dir/Contents/MacOS/CrossoverFFBApp"
+cp "$binary_dir/crossover-ffb" "$app_dir/Contents/MacOS/crossover-ffb"
+cp bridge/build/dinput8.dll "$app_dir/Contents/Resources/dinput8.dll"
+cat > "$app_dir/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>CrossoverFFBApp</string>
+<key>CFBundleIdentifier</key><string>local.crossover.ffb</string>
+<key>CFBundleName</key><string>crossover-ffb</string>
+<key>CFBundleDisplayName</key><string>crossover-ffb</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>$version</string>
+<key>CFBundleVersion</key><string>$build_number</string>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>LSUIElement</key><true/>
+<key>NSInputMonitoringUsageDescription</key><string>crossover-ffb reads your racing wheel and pedals to pass them to Windows games.</string>
+</dict></plist>
+PLIST
+# Finder may attach presentation metadata after opening the locally built app.
+# Remove only that metadata, never quarantine/security attributes.
+xattr -d com.apple.FinderInfo "$app_dir" 2>/dev/null || true
+codesign --force --sign - "$app_dir"
+# Disk image: the app next to an Applications shortcut, ready to drag across.
+dmg="$PWD/dist/crossover-ffb-$version.dmg"
+staging="$PWD/.build/dmg"
+rm -rf "$staging" "$dmg"
+mkdir -p "$staging"
+cp -R "$app_dir" "$staging/"
+ln -s /Applications "$staging/Applications"
+hdiutil create -quiet -volname "crossover-ffb $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg"
+rm -rf "$staging"
+print "Packaged: $app_dir and dist/${dmg:t}"

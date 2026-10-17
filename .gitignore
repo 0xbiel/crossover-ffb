@@ -1,0 +1,12 @@
+# Build output
+.build/
+.swiftpm/
+bridge/build/
+dist/
+
+# macOS
+.DS_Store
+
+# Local notes and logs that should never be published
+*.log
+/private/

@@ -1,0 +1,3 @@
+// swift-tools-version: 6.0
+import PackageDescription
+let package = Package(name: "crossover-ffb", platforms: [.macOS(.v13)], products: [.executable(name: "CrossoverFFBApp", targets: ["CrossoverFFBApp"]), .executable(name: "crossover-ffb", targets: ["crossover-ffb"])], targets: [.executableTarget(name: "CrossoverFFBApp", dependencies: ["WheelCore"], linkerSettings: [.linkedFramework("AppKit"), .linkedFramework("IOKit")]), .target(name: "CBridgeAtomics"), .target(name: "WheelCore", dependencies: ["CBridgeAtomics"]), .executableTarget(name: "crossover-ffb", dependencies: ["WheelCore"], linkerSettings: [.linkedFramework("IOKit")]), .testTarget(name: "WheelCoreTests", dependencies: ["WheelCore"])])

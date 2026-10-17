@@ -1,0 +1,72 @@
+# Builds the app and publishes crossover-ffb-<version>.dmg as a GitHub release.
+#
+# To release: bump the number in VERSION and push to main. A tag v<VERSION> is created
+# with the release. Pushing a tag v<VERSION> yourself works too (it must match VERSION).
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths: [VERSION]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          tag="v$version"
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION ($version)"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF_TYPE" != tag ]] && git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "Release $tag already exists; bump VERSION to publish a new one."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Install LLVM and lld (Windows DLL cross-compile)
+        if: steps.version.outputs.skip != 'true'
+        run: brew install llvm lld
+
+      - name: Test
+        if: steps.version.outputs.skip != 'true'
+        run: ./scripts/dev test
+
+      - name: Build app and disk image
+        if: steps.version.outputs.skip != 'true'
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/package-app
+
+      - name: Publish release
+        if: steps.version.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: crossover-ffb ${{ steps.version.outputs.version }}
+          files: dist/crossover-ffb-${{ steps.version.outputs.version }}.dmg
+          generate_release_notes: true
+          body: |
+            Open the disk image and drag **crossover-ffb** to Applications.
+
+            The app is not notarized. The first time, right-click it and choose **Open**
+            (or allow it in System Settings › Privacy & Security).
