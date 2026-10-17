@@ -14,7 +14,7 @@ public struct WheelKinematics: Sendable {
 /// durations and envelopes, and evaluates condition effects against live wheel motion.
 /// Output is −1…+1 where positive pushes the wheel toward +X (right).
 public final class EffectEngine {
-    /// Flip constant/ramp/periodic forces (games disagree on the sign convention).
+    /// Flip constant/ramp/periodic forces, for a game that gets the convention backwards.
     /// Spring/damper/friction/inertia always resist motion regardless.
     public var reverseDirectional = false
     private var started: [Int: (starts: UInt32, at: Double)] = [:]
@@ -43,7 +43,9 @@ public final class EffectEngine {
             }
         }
         started = started.filter { live.contains($0.key) }
-        let total = (reverseDirectional ? -directional : directional) - resisting
+        // DirectInput directions say where a force comes from: a positive force along +X
+        // pushes the wheel toward −X. Conditions are already in "resist" form.
+        let total = (reverseDirectional ? directional : -directional) - resisting
         return max(-1, min(1, total / 10000 * Double(state.deviceGain) / 10000))
     }
 
@@ -141,5 +143,7 @@ public enum LogitechWheelCommand {
         let d = max(40, min(900, degrees))
         return pad([0xf8, 0x81, UInt8(d & 0xff), UInt8(d >> 8)], length)
     }
+    /// Rev LEDs, bit 0 (first) … bit 4 (last).
+    public static func leds(_ mask: UInt8, length: Int = 7) -> [UInt8] { pad([0xf8, 0x12, mask & 0x1f], length) }
     private static func pad(_ bytes: [UInt8], _ length: Int) -> [UInt8] { bytes + Array(repeating: 0, count: max(0, length - bytes.count)) }
 }

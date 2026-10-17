@@ -13,6 +13,9 @@ final class FFBBridge: @unchecked Sendable {
         var effectsPlaying = 0
         var output = 0.0
         var input = BridgeInput()
+        /// Wheel position before the sensitivity curve, 0…65535.
+        var rawSteering: UInt32 = 32768
+        var leds: UInt8 = 0
         var message = "Stopped."
         var trueForce = "TrueForce off."
         var telemetry = false
@@ -31,6 +34,7 @@ final class FFBBridge: @unchecked Sendable {
     private var _motorSign = 1.0
     private var _tfMotorSign = 1.0
     private var _tf = TrueForceSettings()
+    private var _wheel = WheelSettings()
     private var _calibrationRequest = false
     private var keepRunning = false
     private var thread: Thread?
@@ -44,6 +48,7 @@ final class FFBBridge: @unchecked Sendable {
     var motorSign: Double { get { lock.withLock { _motorSign } } set { lock.withLock { _motorSign = newValue < 0 ? -1 : 1 } } }
     var tfMotorSign: Double { get { lock.withLock { _tfMotorSign } } set { lock.withLock { _tfMotorSign = newValue < 0 ? -1 : 1 } } }
     var trueForce: TrueForceSettings { get { lock.withLock { _tf } } set { lock.withLock { _tf = newValue } } }
+    var wheel: WheelSettings { get { lock.withLock { _wheel } } set { lock.withLock { _wheel = newValue } } }
     func requestCalibration() { lock.withLock { _calibrationRequest = true } }
 
     func start() {
@@ -75,7 +80,12 @@ final class FFBBridge: @unchecked Sendable {
     private var shared: SharedBridge?
     private var device: IOHIDDevice?
     private var outputLength = 7
-    private var input = BridgeInput()
+    private var input = BridgeInput() // raw from the wheel; games get `published`
+    private var published = BridgeInput()
+    private var appliedWheel = WheelSettings()
+    private var appliedRange = 0
+    private var revLights = RevLights()
+    private var lastLEDs: UInt8 = 0, lastLEDSend = 0.0
     private var engine = EffectEngine()
     private var position = 0.0, velocity = 0.0, acceleration = 0.0, lastPosition = 0.0, lastTick = 0.0
     private var lastCode: [UInt8] = []
@@ -149,7 +159,9 @@ final class FFBBridge: @unchecked Sendable {
         lastCode = []
         send(LogitechWheelCommand.stopAll(length: outputLength))
         send(LogitechWheelCommand.autocenterOff(length: outputLength))
-        send(LogitechWheelCommand.range(900, length: outputLength))
+        appliedRange = 0 // range is sent by the first tick
+        lastLEDs = 0
+        send(LogitechWheelCommand.leds(0, length: outputLength))
         openTrueForce(manager: manager, product: IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? Int ?? 0)
         update { $0.wheelConnected = true; $0.message = "Wheel ready. Start the game." }
     }
@@ -213,6 +225,7 @@ final class FFBBridge: @unchecked Sendable {
         tfDevice = nil
         if let device {
             send(LogitechWheelCommand.stopAll(length: outputLength))
+            send(LogitechWheelCommand.leds(0, length: outputLength))
             IOHIDDeviceRegisterInputValueCallback(device, nil, nil)
             IOHIDDeviceRegisterRemovalCallback(device, nil, nil)
             IOHIDDeviceUnscheduleFromRunLoop(device, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
@@ -220,7 +233,9 @@ final class FFBBridge: @unchecked Sendable {
         }
         device = nil
         input = BridgeInput()
+        published = input
         shared?.publish(input)
+        revLights.reset()
         update { $0.wheelConnected = false; $0.output = 0; $0.input = BridgeInput(); $0.message = message }
     }
 
@@ -250,13 +265,20 @@ final class FFBBridge: @unchecked Sendable {
             let bit: UInt32 = 1 << (usage - 1)
             if raw != 0 { input.buttons |= bit } else { input.buttons &= ~bit }
         } else { return }
-        shared?.publish(input) // immediately: lowest input latency for the game
+        published = appliedWheel.apply(to: input)
+        shared?.publish(published) // immediately: lowest input latency for the game
     }
 
     private func tick(now: Double) {
         guard let shared else { return }
-        shared.publish(input)
+        let wheel = lock.withLock { _wheel }
+        if wheel != appliedWheel { appliedWheel = wheel; published = wheel.apply(to: input) }
+        shared.publish(device == nil ? input : published)
         guard device != nil else { return }
+        if appliedRange != wheel.range {
+            appliedRange = wheel.range
+            send(LogitechWheelCommand.range(wheel.range, length: outputLength))
+        }
         let dt = max(0.0005, now - lastTick)
         lastTick = now
         let p = Double(input.steering) / 32767.5 - 1
@@ -282,6 +304,11 @@ final class FFBBridge: @unchecked Sendable {
             engine.reverseDirectional = reverse
             level = engine.force(state, wheel: WheelKinematics(position: position, velocity: velocity, acceleration: acceleration), now: now) * strength
         } else { engine.reset() }
+        if !gameActive { revLights.reset() } // a new session may be a different car
+        let playing = gameActive ? state.effects.filter(\.playing).count : 0
+        if gameActive && !state.paused && wheel.centeringSpring && (playing == 0 || wheel.springInFFBGames) {
+            level = max(-1, min(1, level + wheel.centeringForce(position: position, velocity: velocity)))
+        }
         // TrueForce follows the game session; a short grace period rides out heartbeat jitter.
         if gameActive { tfInactiveSince = now }
         let wantTF = tf.enabled && tfDevice != nil && now - tfInactiveSince < 2
@@ -289,10 +316,13 @@ final class FFBBridge: @unchecked Sendable {
         if !wantTF && tfStreaming { stopTrueForce() }
 
         var telemetry: GameTelemetry?
+        var maxRpm = 0.0
         if let page = shared.readTelemetry(), page.source == 1 || page.source == 2,
            Int64(SharedBridge.nowMilliseconds()) - Int64(page.unixMilliseconds) < 1000 {
             telemetry = GameTelemetry.acPhysics(page.bytes, evo: page.source == 2)
+            maxRpm = Double(page.maxRpm)
         }
+        updateRevLights(telemetry: gameActive && wheel.revLights ? telemetry : nil, maxRpm: maxRpm, now: now)
         if tfStreaming, let tfDevice {
             synth.engineGain = tf.engine; synth.roadGain = tf.road; synth.slipGain = tf.slip
             synth.update(gameActive && !state.paused ? telemetry : nil, now: now)
@@ -314,13 +344,14 @@ final class FFBBridge: @unchecked Sendable {
                 lastSend = now
             }
         }
-        let playing = gameActive ? state.effects.filter(\.playing).count : 0
         update {
             $0.gameProcessID = state.processID
             $0.gameActive = gameActive
             $0.effectsPlaying = playing
             $0.output = level
-            $0.input = input
+            $0.input = published
+            $0.rawSteering = input.steering
+            $0.leds = lastLEDs
             $0.telemetry = telemetry != nil
             $0.tfStreaming = tfStreaming
             $0.message = gameActive ? "Game connected — force feedback active." : state.processID != 0 && age < 5000 ? "Game seen; waiting for it to acquire the wheel." : "Wheel ready. Start the game."
@@ -353,6 +384,16 @@ final class FFBBridge: @unchecked Sendable {
             update { $0.message = viaTF ? "TrueForce motor direction detected." : "Motor direction detected." }
             onCalibrated?(sign, viaTF)
         }
+    }
+
+    /// Rev LEDs from telemetry, sent on change (at most every 30 ms); dark without a game.
+    private func updateRevLights(telemetry: GameTelemetry?, maxRpm: Double, now: Double) {
+        var mask: UInt8 = 0
+        if let telemetry, telemetry.engineRunning { mask = revLights.mask(rpm: telemetry.rpm, maxRpm: maxRpm, now: now) }
+        guard mask != lastLEDs, now - lastLEDSend > 0.03 else { return }
+        send(LogitechWheelCommand.leds(mask, length: outputLength))
+        lastLEDs = mask
+        lastLEDSend = now
     }
 
     private func send(_ bytes: [UInt8]) {

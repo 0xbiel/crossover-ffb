@@ -10,6 +10,8 @@
 unsigned char test_shm[SHM_FULL];
 static unsigned char physics[TM_PHYSICS_BYTES];
 const unsigned char *test_physics(void) { return physics; }
+static unsigned char staticPage[512];
+const unsigned char *test_static(void) { return staticPage; }
 static U64 nowMs = 1000000, nowTicks = 5000;
 static int allocations;
 U64 test_unix_ms(void) { return nowMs; }
@@ -145,11 +147,13 @@ int main(void) {
     assert(CALL(device, 22, HR (*)(PTR, U32), 0x8 | 0x10) == OK && get32(SHM_FF + 24) == 0);
 
     /* ACC physics page is mirrored on each new packetId. */
+    staticPage[412] = 8200 & 0xff; staticPage[413] = 8200 >> 8;
     physics[0] = 7;
     memcpy(physics + 20, &(I32){6500}, 4); /* rpms */
     assert(CALL0(device, 25, HR (*)(PTR)) == OK);
     assert(get32(SHM_TM) % 2 == 0 && get32(SHM_TM + 4) == 1 && get32(SHM_TM + 8) == TM_PHYSICS_BYTES);
     assert(get32(SHM_TM + SHM_TM_DATA) == 7 && get32(SHM_TM + SHM_TM_DATA + 20) == 6500);
+    assert(get32(SHM_TM + 24) == 8200); /* static maxRpm */
     U32 tseq = get32(SHM_TM);
     assert(CALL0(device, 25, HR (*)(PTR)) == OK && get32(SHM_TM) == tseq); /* unchanged packet: no copy */
 

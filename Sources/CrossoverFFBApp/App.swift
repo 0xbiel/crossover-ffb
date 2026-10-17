@@ -78,9 +78,9 @@ enum Snapshot {
             try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name + ".png"))
         }
         save(MenuView(), "menu", NSSize(width: 352, height: 470))
-        for (tab, name) in [(AppModel.SettingsTab.games, "games"), (.forceFeedback, "ffb"), (.trueForce, "trueforce"), (.inputs, "inputs"), (.general, "general")] {
+        for (tab, name) in [(AppModel.SettingsTab.games, "games"), (.wheel, "wheel"), (.forceFeedback, "ffb"), (.trueForce, "trueforce"), (.inputs, "inputs"), (.general, "general")] {
             model.settingsTab = tab
-            save(SettingsView(), "settings-" + name, NSSize(width: 960, height: 640))
+            save(SettingsView(), "settings-" + name, NSSize(width: 960, height: tab == .wheel ? 1560 : 640))
         }
     }
 }

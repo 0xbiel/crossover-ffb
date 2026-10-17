@@ -60,7 +60,7 @@ Useful while developing:
 
 ## Releasing
 
-Bump the number in `VERSION` and push to `main`. The [Release workflow](.github/workflows/release.yml)
+Add a `## <version>` section to [CHANGELOG.md](CHANGELOG.md), bump the number in `VERSION` and push to `main`. The changelog section becomes the release notes. The [Release workflow](.github/workflows/release.yml)
 runs the tests, builds the app and the disk image, tags `v<VERSION>` and publishes the `.dmg`
 as a GitHub release. Pushing a matching `v<VERSION>` tag yourself does the same.
 

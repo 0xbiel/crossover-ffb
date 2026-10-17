@@ -163,10 +163,15 @@ static int read_snapshot(Snapshot *out) {
  * Local\acpmf_physics, 2 = AC EVO Local\acevo_pmf_physics (same 800-byte
  * layout; word 198 is road instead of g vibration). */
 #define TM_PHYSICS_BYTES 800u
+/* SPageFileStatic.maxRpm (after five 33-wchar name fields, packed to 4 bytes), copied
+ * to SHM_TM + 24 so the app can scale the wheel's rev lights. 0 when unknown. */
+#define TM_STATIC_MAXRPM 412u
 #ifdef CFB_TEST
 extern const unsigned char *test_physics(void);
+extern const unsigned char *test_static(void);
 static U32 physicsSource = 1;
 #define physics_view test_physics
+#define static_view test_static
 #else
 IMPORT PTR OpenFileMappingW(U32, int, const U16 *);
 static const unsigned char *physicsView;
@@ -202,6 +207,30 @@ static const unsigned char *physics_view(void) {
     }
     return view;
 }
+static const unsigned char *staticView;
+static U64 staticRetryAt;
+static const unsigned char *static_view(void) {
+    if (staticView || !physicsSource)
+        return staticView;
+    U64 now = GetTickCount64();
+    if (now < staticRetryAt)
+        return 0;
+    staticRetryAt = now + 2000;
+    const char *name = physicsSource == 2 ? "Local\\acevo_pmf_static" : "Local\\acpmf_static";
+    U16 wide[32];
+    U32 i = 0;
+    for (; name[i]; i++)
+        wide[i] = (U16)name[i];
+    wide[i] = 0;
+    PTR mapping = OpenFileMappingW(4, 0, wide);
+    if (!mapping)
+        return 0;
+    staticView = MapViewOfFile(mapping, 4, 0, 0, TM_STATIC_MAXRPM + 4);
+    CloseHandle(mapping);
+    if (staticView)
+        event("Telemetry_STATIC", physicsSource, 0);
+    return staticView;
+}
 #endif
 static U32 lastPhysicsPacket = 0xffffffffu;
 static void copy_telemetry(volatile unsigned char *p) {
@@ -220,6 +249,14 @@ static void copy_telemetry(volatile unsigned char *p) {
     st32(p + SHM_TM + 4, physicsSource);
     st32(p + SHM_TM + 8, TM_PHYSICS_BYTES);
     st64(p + SHM_TM + 16, unix_ms());
+    const unsigned char *info = static_view();
+    U32 maxRpm = info ? le32(info + TM_STATIC_MAXRPM) : 0;
+    static U32 loggedMaxRpm;
+    if (maxRpm != loggedMaxRpm) {
+        loggedMaxRpm = maxRpm;
+        event("Telemetry_MAXRPM", maxRpm, 0);
+    }
+    st32(p + SHM_TM + 24, maxRpm);
     for (U32 i = 0; i < TM_PHYSICS_BYTES; i += 4)
         st32(p + SHM_TM + SHM_TM_DATA + i, le32(src + i));
     __atomic_thread_fence(__ATOMIC_SEQ_CST);

@@ -127,18 +127,19 @@ public final class SharedBridge: @unchecked Sendable {
         return nil
     }
 
-    /// Latest raw game telemetry page (source 1 = AC/ACC acpmf_physics) and when the DLL copied it.
-    public func readTelemetry() -> (source: UInt32, unixMilliseconds: UInt64, bytes: [UInt8])? {
+    /// Latest raw game telemetry page (source 1 = AC/ACC acpmf_physics, 2 = AC EVO), when the DLL
+    /// copied it, and the car's max rpm from the static page (0 when unknown).
+    public func readTelemetry() -> (source: UInt32, unixMilliseconds: UInt64, maxRpm: UInt32, bytes: [UInt8])? {
         let block = base + Self.telemetry
         for _ in 0..<32 {
             let first = cfb_load32_acquire(block)
             if first & 1 != 0 { continue }
             let source = cfb_load32_acquire(block + 4), length = min(Int(cfb_load32_acquire(block + 8)), 2048)
-            let stamp = cfb_load64_acquire(block + 16)
+            let stamp = cfb_load64_acquire(block + 16), maxRpm = cfb_load32_acquire(block + 24)
             guard source != 0, length > 0 else { return nil }
             let bytes = [UInt8](UnsafeRawBufferPointer(start: block + 32, count: length))
             cfb_fence()
-            if cfb_load32_acquire(block) == first { return (source, stamp, bytes) }
+            if cfb_load32_acquire(block) == first { return (source, stamp, maxRpm, bytes) }
         }
         return nil
     }

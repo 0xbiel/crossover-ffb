@@ -38,6 +38,14 @@ final class AppModel: ObservableObject {
     @Published var tfEngine: Double { didSet { pushTrueForce() } }
     @Published var tfRoad: Double { didSet { pushTrueForce() } }
     @Published var tfSlip: Double { didSet { pushTrueForce() } }
+    /// G HUB-style wheel options (range, sensitivity, centering spring, pedals, rev lights).
+    @Published var wheel: WheelSettings {
+        didSet {
+            guard wheel != oldValue else { return }
+            bridge.wheel = wheel
+            if let data = try? JSONEncoder().encode(wheel) { defaults.set(data, forKey: "wheel") }
+        }
+    }
     @Published var motorDetected: Bool
     @Published var tfMotorDetected: Bool
     @Published var settingsTab = SettingsTab.games
@@ -46,6 +54,8 @@ final class AppModel: ObservableObject {
     @Published var games: [GameEntry] = []
     @Published var gameStatus: [String: BridgeInstaller.Status] = [:]
     @Published var scanning = false
+    /// The scan has run for a while: usually macOS is waiting for permission to read a drive.
+    @Published var slowScan = false
     @Published var busyGame: String?
     @Published var notice: Notice?
     @Published var pendingCustomExe: URL?
@@ -55,7 +65,7 @@ final class AppModel: ObservableObject {
     let installer: BridgeInstaller
 
     struct Notice: Identifiable { let id = UUID(); var title: String; var message: String }
-    enum SettingsTab: Hashable { case games, forceFeedback, trueForce, inputs, general }
+    enum SettingsTab: Hashable { case games, wheel, forceFeedback, trueForce, inputs, general }
 
     init() {
         defaults.register(defaults: ["strength": 80.0, "reverse": false, "motorSign": 0.0, "autoStart": true,
@@ -69,16 +79,20 @@ final class AppModel: ObservableObject {
         tfEngine = defaults.double(forKey: "tfEngine")
         tfRoad = defaults.double(forKey: "tfRoad")
         tfSlip = defaults.double(forKey: "tfSlip")
+        wheel = defaults.data(forKey: "wheel").flatMap { try? JSONDecoder().decode(WheelSettings.self, from: $0) } ?? WheelSettings()
         motorDetected = defaults.double(forKey: "motorSign") != 0
         tfMotorDetected = defaults.double(forKey: "tfMotorSign") != 0
         installer = BridgeInstaller(payload: Self.bundledBridge() ?? Data())
 
         bridge.strength = strength / 100
         bridge.reverseDirectional = reverse
+        bridge.wheel = wheel
         let sign = defaults.double(forKey: "motorSign")
         bridge.motorSign = sign == 0 ? 1 : sign
         let tfSign = defaults.double(forKey: "tfMotorSign")
-        bridge.tfMotorSign = tfSign != 0 ? tfSign : bridge.motorSign
+        // The stream's torque is offset binary with 0xFFFF = full right, so +1 is right on every
+        // G923, unlike the classic command, whose direction varies. Only Detect overrides it.
+        bridge.tfMotorSign = tfSign != 0 ? tfSign : 1
         pushTrueForce()
         bridge.onCalibrated = { [weak self] sign, viaTF in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.calibrated(sign, viaTF: viaTF) } }
@@ -137,10 +151,7 @@ final class AppModel: ObservableObject {
     private func calibrated(_ sign: Double?, viaTF: Bool) {
         guard let sign else { return }
         defaults.set(sign, forKey: viaTF ? "tfMotorSign" : "motorSign")
-        if viaTF { tfMotorDetected = true } else {
-            motorDetected = true
-            if defaults.double(forKey: "tfMotorSign") == 0 { bridge.tfMotorSign = sign }
-        }
+        if viaTF { tfMotorDetected = true } else { motorDetected = true }
     }
 
     var needsInputPermission: Bool { status.message.contains("Input Monitoring") }
@@ -216,6 +227,9 @@ final class AppModel: ObservableObject {
     func rescan() {
         guard !scanning else { return }
         scanning = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            MainActor.assumeIsolated { if self.scanning { self.slowScan = true } }
+        }
         let custom = customGames, hidden = hiddenGames, installer = installer
         DispatchQueue.global(qos: .userInitiated).async {
             let found = GameLibrary().discover().filter { !hidden.contains($0.id) }
@@ -226,6 +240,7 @@ final class AppModel: ObservableObject {
                     self.games = all
                     self.gameStatus = statuses
                     self.scanning = false
+                    self.slowScan = false
                     self.loadArtwork()
                 }
             }

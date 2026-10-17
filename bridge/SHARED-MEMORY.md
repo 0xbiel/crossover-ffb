@@ -19,6 +19,7 @@ unchanged. Source of truth: `bridge/shm.h` and `Sources/WheelCore/SharedBridge.s
 | 320 + 96·n | DLL | 32 effect records |
 | 4096 | DLL | telemetry seqlock |
 | 4100 / 4104 / 4112 | DLL | source (1 = AC/ACC `Local\acpmf_physics`, 2 = AC EVO `Local\acevo_pmf_physics`) / length (800) / copied at Unix ms u64 |
+| 4120 | DLL | car max rpm u32 from the static page (`Local\acpmf_static` / `Local\acevo_pmf_static`, offset 412), 0 if unknown; drives the rev lights |
 | 4128… | DLL | raw page, copied on every Poll/GetDeviceState whose page packetId changed |
 
 Effect record (u32/i32 words): 0 kind (1 constant, 2 ramp, 3 square, 4 sine, 5 triangle,

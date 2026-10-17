@@ -11,27 +11,28 @@ final class EffectEngineTests: XCTestCase {
     func testConstantForceFollowsMagnitudeDirectionAndGain() {
         let engine = EffectEngine()
         let e = BridgeEffect(slot: 0, kind: .constant, gain: 5000, params: [8000])
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 1), 0.4, accuracy: 1e-9)
-        var left = e; left.direction = (-1, 0)
-        XCTAssertEqual(engine.force(state([left]), wheel: .init(), now: 1), -0.4, accuracy: 1e-9)
-        XCTAssertEqual(engine.force(state([e], gain: 5000), wheel: .init(), now: 1), 0.2, accuracy: 1e-9)
-        engine.reverseDirectional = true
+        // A force along +X comes from the right and pushes the wheel left (DirectInput).
         XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 1), -0.4, accuracy: 1e-9)
+        var left = e; left.direction = (-1, 0)
+        XCTAssertEqual(engine.force(state([left]), wheel: .init(), now: 1), 0.4, accuracy: 1e-9)
+        XCTAssertEqual(engine.force(state([e], gain: 5000), wheel: .init(), now: 1), -0.2, accuracy: 1e-9)
+        engine.reverseDirectional = true
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 1), 0.4, accuracy: 1e-9)
     }
 
-    func testPolarEastIsPositiveX() {
+    func testPolarEastPushesTowardNegativeX() {
         let e = BridgeEffect(slot: 0, kind: .constant, coordinates: 0x20, axisCount: 2, direction: (9000, 0), params: [10000])
-        XCTAssertEqual(EffectEngine().force(state([e]), wheel: .init(), now: 0), 1, accuracy: 1e-6)
+        XCTAssertEqual(EffectEngine().force(state([e]), wheel: .init(), now: 0), -1, accuracy: 1e-6)
     }
 
     func testFiniteDurationEndsAndRestartsOnNewStart() {
         let engine = EffectEngine()
         var e = BridgeEffect(slot: 0, kind: .constant, durationMicros: 100_000, params: [10000])
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10), 1)
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10.05), 1)
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10), -1)
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10.05), -1)
         XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10.2), 0)
         e.starts = 2
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10.3), 1)
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 10.3), -1)
     }
 
     func testSpringAndDamperResistMotion() {
@@ -50,8 +51,8 @@ final class EffectEngineTests: XCTestCase {
     func testSineOscillatesAroundOffset() {
         let engine = EffectEngine()
         let e = BridgeEffect(slot: 0, kind: .sine, params: [5000, 1000, 0, 100_000])
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 0), 0.1, accuracy: 1e-6)
-        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 0.025), 0.6, accuracy: 1e-6)
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 0), -0.1, accuracy: 1e-6)
+        XCTAssertEqual(engine.force(state([e]), wheel: .init(), now: 0.025), -0.6, accuracy: 1e-6)
     }
 
     func testSharedMemoryRoundTrip() throws {
@@ -69,11 +70,11 @@ final class EffectEngineTests: XCTestCase {
         // The DLL's telemetry block: seq, source 1, length, unix ms, then the raw page.
         var block = [UInt8](repeating: 0, count: 32 + 800)
         func put(_ o: Int, _ v: UInt32) { for k in 0..<4 { block[o + k] = UInt8(v >> (8 * k) & 0xff) } }
-        put(0, 2); put(4, 1); put(8, 800); put(16, 1234); put(32, 42)
+        put(0, 2); put(4, 1); put(8, 800); put(16, 1234); put(24, 7800); put(32, 42)
         let file = try FileHandle(forWritingTo: URL(fileURLWithPath: path))
         try file.seek(toOffset: 4096); file.write(Data(block)); try file.close()
         let telemetry = try XCTUnwrap(bridge.readTelemetry())
-        XCTAssertEqual(telemetry.source, 1); XCTAssertEqual(telemetry.unixMilliseconds, 1234)
+        XCTAssertEqual(telemetry.source, 1); XCTAssertEqual(telemetry.unixMilliseconds, 1234); XCTAssertEqual(telemetry.maxRpm, 7800)
         XCTAssertEqual(GameTelemetry.acPhysics(telemetry.bytes)?.packet, 42)
     }
 

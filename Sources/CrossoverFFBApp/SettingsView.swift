@@ -22,6 +22,7 @@ struct SettingsView: View {
             Group {
                 switch model.settingsTab {
                 case .games: LibraryPage()
+                case .wheel: WheelPage()
                 case .forceFeedback: ForceFeedbackPage()
                 case .trueForce: TrueForcePage()
                 case .inputs: InputsPage()
@@ -52,6 +53,7 @@ private struct Sidebar: View {
                 item(.games, "Library", "square.grid.2x2.fill", .indigo)
             }
             Section("Wheel") {
+                item(.wheel, "Steering Wheel", "steeringwheel.circle.fill", .cyan)
                 item(.forceFeedback, "Force Feedback", "steeringwheel", .blue)
                 item(.trueForce, "TrueForce", "waveform", .purple)
                 item(.inputs, "Wheel Input", "dial.medium.fill", .teal)
@@ -217,6 +219,7 @@ struct LibraryPage: View {
                 .controlSize(.large)
             }
         } content: {
+            if model.slowScan { PermissionHint() }
             if let exe = model.pendingCustomExe { PrefixPicker(exe: exe) }
             if model.games.isEmpty {
                 EmptyLibrary()
@@ -229,6 +232,28 @@ struct LibraryPage: View {
                 .font(.caption).foregroundStyle(.secondary)
                 .padding(.top, 4)
         }
+    }
+}
+
+/// Shown when a scan stalls: macOS asks before an app may read an external drive, and the
+/// dialog can open behind a full-screen game.
+private struct PermissionHint: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "externaldrive.badge.questionmark").font(.title2).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Waiting for permission to read a drive").font(.headline)
+                Text("macOS asks before crossover-ffb can look at an external or removable drive. Click **Allow** in that dialog. It can be hidden behind a full-screen game, so switch Spaces or quit the game. If you clicked Don't Allow, turn on Removable Volumes for crossover-ffb in System Settings › Privacy & Security › Files and Folders, then look again.")
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button("Open Privacy Settings") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)
+                }
+                .glassButton().padding(.top, 4)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(Color.orange.opacity(0.1)))
     }
 }
 
@@ -452,7 +477,7 @@ struct TrueForcePage: View {
             .opacity(model.tfEnabled ? 1 : 0.55)
             Card(title: "Direction", footer: "TrueForce only runs while a game is connected: start a session, pause the game, let go of the wheel, then press Detect. If the wheel stops responding after a crash, unplug its power for a few seconds.") {
                 Row(symbol: "scope", color: .pink, title: "Detect TrueForce direction",
-                    subtitle: model.tfMotorDetected ? "Detected" : "Not detected yet (uses the normal direction)", divider: false) {
+                    subtitle: model.tfMotorDetected ? "Detected" : "Not detected yet (uses the standard TrueForce direction)", divider: false) {
                     Button("Detect") { model.detectDirection() }.glassButton().disabled(!s.tfStreaming)
                 }
             }

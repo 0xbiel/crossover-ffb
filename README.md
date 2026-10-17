@@ -23,6 +23,8 @@ and its forces reach the real wheel on your Mac.
 - **One-click install.** The app finds your games on any disk (internal, SSD, external) in
   Steam + NotProton, CrossOver bottles, or any Wine prefix. **Uninstall** restores exactly what
   was there before.
+- **G HUB-style wheel settings.** Operating range from 40° to 900°, steering and pedal
+  sensitivity curves, a centering spring, combined pedals, and rev lights driven by the game's rpm.
 - **Lives in the menu bar.** No Dock icon. A full Settings window has the game library,
   force-feedback and TrueForce tuning, and a live input view.
 
@@ -76,6 +78,24 @@ To remove it, uninstall the bridge from each game in the Library, then delete th
 
 For ACC, the default G923 preset already matches the layout: steering axis 0, throttle 1,
 brake 5, clutch 6.
+
+### Steering wheel settings
+
+<img src="docs/images/wheel.png" width="560" align="right" alt="Steering Wheel settings">
+
+**Settings › Steering Wheel** has the options Logitech G HUB offers for the G923 and G29,
+which G HUB can't provide under Wine:
+
+- **Operating range**, 40° to 900°, with presets for 180°, 270°, 360°, 540°, 720° and 900°.
+  The wheel reports full steering over that angle and holds a soft stop at the ends.
+- **Sensitivity**, a response curve where 50 is linear. The same curve is available for each pedal.
+- **Centering spring**, for games without force feedback, optionally on top of the game's own forces.
+- **Torque** and **audio effects**, which are the force-feedback and TrueForce strengths.
+- **Combined pedals**, which put the accelerator and brake on one axis for older games.
+- **Rev lights**. The LEDs fill up with the engine's rpm and flash at the limiter
+  (Assetto Corsa, ACC and AC EVO).
+
+<br clear="right">
 
 ### TrueForce
 

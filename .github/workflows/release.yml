@@ -56,6 +56,19 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
         run: ./scripts/package-app
 
+      - name: Release notes from CHANGELOG.md
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          {
+            awk -v v="${{ steps.version.outputs.version }}" '$0 == "## " v {on=1; next} /^## / {on=0} on' CHANGELOG.md
+            echo
+            echo "### Install"
+            echo
+            echo "Open the disk image and drag **crossover-ffb** to Applications. The app is not notarized:"
+            echo "the first time, right-click it and choose **Open** (or allow it in System Settings › Privacy & Security)."
+          } > dist/release-notes.md
+          cat dist/release-notes.md
+
       - name: Publish release
         if: steps.version.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
@@ -65,8 +78,4 @@ jobs:
           name: crossover-ffb ${{ steps.version.outputs.version }}
           files: dist/crossover-ffb-${{ steps.version.outputs.version }}.dmg
           generate_release_notes: true
-          body: |
-            Open the disk image and drag **crossover-ffb** to Applications.
-
-            The app is not notarized. The first time, right-click it and choose **Open**
-            (or allow it in System Settings › Privacy & Security).
+          body_path: dist/release-notes.md
