@@ -166,3 +166,7 @@ All code here is original. No driver or SDK code was copied.
 
 crossover-ffb is not affiliated with Logitech, Kunos Simulazioni, CodeWeavers or Valve. Logitech,
 G923, G29 and TrueForce are trademarks of Logitech. Game names and artwork belong to their owners.
+
+Experimental native-SDK and new-wheel development is documented in
+[the native-wheel foundation and acceptance gates](docs/NATIVE-WHEEL-FOUNDATION.md).
+Xbox G923, RS50 and G PRO output is not enabled or hardware-accepted.

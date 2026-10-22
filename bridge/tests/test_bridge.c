@@ -190,7 +190,70 @@ static void test_identity(void) {
     puts("PASS identity: ANSI/Unicode metadata, properties, stable GUIDs, v2 compatibility, reconnects");
 }
 
+static int mockCount = 1, mockReleased, mockQueries, mockMalformed;
+static HR mock_property(Device *d, const GUID *g, Property *p) {
+    (void)d;
+    assert((U64)g == 12); mockQueries++;
+    GuidPathProperty *v = (void *)p;
+    v->guid = guidX;
+    nameW(v->path, "\\\\?\\hid#vid_046d&pid_c266#physical");
+    if (mockMalformed) for (int i = 0; i < 260; i++) v->path[i] = 'x';
+    return OK;
+}
+static U32 mock_release(Device *d) { (void)d; mockReleased++; return 0; }
+static const DeviceVT mockDVT = {.Release = mock_release, .GetProperty = mock_property};
+static Device mockDevice = {.v = &mockDVT};
+static HR mock_create(Factory *f, const GUID *g, void **out, PTR outer) {
+    (void)f; (void)g; assert(!outer); *out = &mockDevice; return OK;
+}
+static HR mock_enum(Factory *f, U32 kind, PTR callback, PTR ctx, U32 flags) {
+    assert(kind == 4 && flags == 1);
+    for (int i = 0; i < mockCount; i++) {
+        if (f->wide) {
+            InstanceW info; instance_info(&info, 1);
+            ((int (*)(const void *, PTR))callback)(&info, ctx);
+        } else {
+            InstanceA info; instance_info(&info, 0);
+            ((int (*)(const void *, PTR))callback)(&info, ctx);
+        }
+    }
+    return OK;
+}
+static const FactoryVT mockFVT = {.CreateDevice = mock_create, .EnumDevices = mock_enum};
+static void test_physical_path(void) {
+    for (int wide = 0; wide < 2; wide++) {
+        input(3, 32768, 65535, 65535, 65535, 0, 8);
+        put32(SHM_IN + 40, 0xc266046d);
+        Factory real = {.v = &mockFVT, .wide = wide};
+        Factory f = {.real = &real, .wide = wide};
+        Device d = {.pathFactory = &f};
+        GuidPathProperty p = {.h = {sizeof(p), 16, 0, 0}};
+        mockCount = 1; mockMalformed = 0; mockReleased = mockQueries = 0;
+        assert(getprop(&d, (const GUID *)12, &p.h) == OK && p.path[0] == '\\');
+        assert(mockReleased == 1 && mockQueries == 1);
+        assert(setprop(&d, (const GUID *)12, &p.h) == UNSUPPORTED);
+        p.h.how = 1; assert(getprop(&d, (const GUID *)12, &p.h) == INVALID); p.h.how = 0;
+        p.h.size--; assert(getprop(&d, (const GUID *)12, &p.h) == INVALID); p.h.size++;
+        mockCount = 2; assert(getprop(&d, (const GUID *)12, &p.h) == NOTFOUND && !p.path[0]);
+        mockCount = 0; assert(getprop(&d, (const GUID *)12, &p.h) == NOTFOUND);
+        mockCount = 1; mockMalformed = 1; assert(getprop(&d, (const GUID *)12, &p.h) == NOTFOUND);
+        assert(mockReleased == 2);
+        put32(SHM_IN + 40, 0xc24f046d); assert(getprop(&d, (const GUID *)12, &p.h) == NOTFOUND);
+        put32(SHM_IN + 40, 0xc266046d); put32(SHM_IN + 4, 0);
+        assert(getprop(&d, (const GUID *)12, &p.h) == NOTFOUND);
+    }
+    zero(test_shm, sizeof(test_shm)); identityVidPid = 0xc266046d;
+    puts("PASS physical path: ANSI/Unicode, real metadata, ambiguity, disconnect, malformed ABI, balanced release");
+}
+
 int main(void) {
+    test_physical_path();
+    /* Experimental products must remain visible to the real backend. */
+    const U32 untouched[] = {0xc26d046d, 0xc26e046d, 0xc272046d, 0xc276046d, 0xc268046d};
+    for (U32 i = 0; i < sizeof(untouched) / sizeof(*untouched); i++) {
+        GUID product = {untouched[i], 0, 0, {0, 0, 0x50, 0x49, 0x44, 0x56, 0x49, 0x44}};
+        assert(!hidden_product(&product));
+    }
     test_identity();
     COM *factory = 0, *device = 0, *constant = 0, *damper = 0;
     assert(DirectInput8Create(0, 0x800, &iidW, (void **)&factory, 0) == OK);

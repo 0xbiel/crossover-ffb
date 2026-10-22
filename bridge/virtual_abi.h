@@ -53,6 +53,12 @@ typedef struct {
 } Property;
 typedef struct {
     Property h;
+    GUID guid;
+    U16 path[260];
+} GuidPathProperty;
+_Static_assert(sizeof(GuidPathProperty) == 552, "DIPROPGUIDANDPATH ABI");
+typedef struct {
+    Property h;
     U32 value;
 } DwordProperty;
 typedef struct {
