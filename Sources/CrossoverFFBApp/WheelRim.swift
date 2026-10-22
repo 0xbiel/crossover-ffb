@@ -1,14 +1,38 @@
 import SwiftUI
 import WheelCore
 
-/// Asset boundary: only known fixed-rim models have keys. Future licensed PNGs
-/// must be square, transparent and centred on the steering axis. Base PIDs do
-/// not identify interchangeable rims. Until cleared artwork ships, use this
-/// original schematic (not a manufacturer photograph or logo).
+/// User-supplied product depictions, generatively isolated for local preview.
+/// See Resources/Rims/NOTICE.txt: these images are not covered by the code's MIT license.
+@MainActor
+enum WheelRimAssets {
+    private static let g29 = load("g29-rim")
+    private static let g923 = load("g923-rim")
+    private static func load(_ name: String) -> NSImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Rims") else { return nil }
+        return NSImage(contentsOf: url)
+    }
+    static func image(for model: BridgeWheelModel?) -> NSImage? {
+        switch model {
+        case .g29: return g29
+        case .g923: return g923
+        case nil: return nil
+        }
+    }
+}
+
+/// A square rendering boundary keeps the existing centre-anchored rotation.
+/// Unknown/disconnected devices retain the original code-native schematic.
 struct WheelRim: View {
     let model: BridgeWheelModel?
     private var accent: Color { model == .g29 ? .blue : .white.opacity(0.75) }
     var body: some View {
+        if let image = WheelRimAssets.image(for: model) {
+            Image(nsImage: image).resizable().interpolation(.high).scaledToFit().accessibilityHidden(true)
+        } else {
+            schematic
+        }
+    }
+    private var schematic: some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height)
             ZStack {

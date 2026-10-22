@@ -37,9 +37,10 @@ The preview launcher does not modify the installed app.
 
 ## Rim artwork
 
-`WheelRim.swift` is the single model-aware rendering boundary. The current artwork
-is an original transparent schematic fallback, not a completed photographic PNG
-replacement. Manufacturer downloads must not be bundled without redistribution
+`WheelRim.swift` is the single model-aware rendering boundary. G29 and G923 now use local user-supplied product images, isolated with the built-in
+ImageGen tool. Both paddle sets are retained and stationary motor housings are removed.
+Unknown/disconnected models retain the original schematic fallback. See
+`Sources/CrossoverFFBApp/Resources/Rims/NOTICE.txt` for source provenance and restrictions. Manufacturer downloads must not be bundled without redistribution
 rights. Future assets should be square transparent cutouts, with the steering axis
 at the canvas centre; both menu and wheel page rotate about that centre using the
 existing steering angle. Only G29 and G923 are selectable models. A base PID does

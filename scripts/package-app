@@ -13,6 +13,8 @@ binary_dir="$(swift build -c release --show-bin-path --cache-path "$PWD/.build/s
 app_dir="$PWD/dist/crossover-ffb.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CrossoverFFBApp" "$app_dir/Contents/MacOS/CrossoverFFBApp"
+# SwiftPM resources used by the model-specific rim preview.
+cp -R "$binary_dir/crossover-ffb_CrossoverFFBApp.bundle" "$app_dir/Contents/Resources/"
 cp "$binary_dir/crossover-ffb" "$app_dir/Contents/MacOS/crossover-ffb"
 cp bridge/build/dinput8.dll "$app_dir/Contents/Resources/dinput8.dll"
 cat > "$app_dir/Contents/Info.plist" <<PLIST

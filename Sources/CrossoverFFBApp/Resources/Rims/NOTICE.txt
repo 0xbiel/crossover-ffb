@@ -1,0 +1,24 @@
+LOCAL PREVIEW PRODUCT IMAGES — NOT MIT-LICENSED ARTWORK
+
+These PNGs are generative background-extraction edits of the user's supplied
+third-party Logitech product depictions. The repository's MIT source-code license
+does not grant rights to the underlying photographs, marks or product artwork.
+No public redistribution license is asserted. These assets were integrated for
+the user's explicitly requested local app preview. Do not push or publish these
+assets in a release without resolving distribution rights.
+
+Original sources supplied by the user:
+G29: 62DE07B3-9497-46D3-9251-8587EF799B2C.png
+Library: libfile_d93baa1708088191adcbe4253376fee5
+G923: B1EE50D8-E5B5-48AD-8902-FE71FD2C602D.png
+Library: libfile_20eaffe048b481918abf88c45aab8f9e
+
+Created with the built-in ImageGen edit tool, 2026-10-22.
+Prompt for each model: faithful background-extraction from the original supplied
+photo; preserve the rim, leather, hub, logos/markings, controls, blue stripe and
+both model-specific shift paddles (silver G29, black G923). Remove all background,
+stationary rear motor housing, clamps/mounts/feet, including housing through the
+wheel openings. Front-facing upright square RGBA canvas, steering axis centred,
+no fabricated controls or model substitution, actual transparency.
+
+Output: g29-rim.png and g923-rim.png, each 1254 x 1254 RGBA.

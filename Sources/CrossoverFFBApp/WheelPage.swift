@@ -149,9 +149,9 @@ struct RotationDial: View {
                     }
                 }
                 WheelRim(model: model)
-                    .frame(width: 130, height: 130)
+                    .frame(width: 156, height: 156)
                     .rotationEffect(.degrees(connected ? max(-450, min(450, angle)) : 0))
-                    .offset(y: 30)
+                    .offset(y: 17)
                     .animation(.linear(duration: 0.07), value: steering)
             }
             .frame(height: 170)
