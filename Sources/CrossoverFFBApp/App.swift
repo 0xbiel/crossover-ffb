@@ -57,30 +57,62 @@ enum MenuIcon {
     }
 }
 
-/// Renders the menu and each settings tab to PNGs (development aid: `--snapshot <dir>`).
+/// Renders deterministic SwiftUI fixtures to PNGs (`--snapshot <dir>`).
+/// AppModel returns before discovery/timers and its FFBBridge cannot start.
 @MainActor
 enum Snapshot {
     static func render(to dir: URL) {
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
+        catch { fatalError("Cannot create snapshot directory: \(error)") }
         let model = AppModel.shared
-        model.scanNow()
+        precondition(model.isPreview, "Snapshots require the hardware-disabled model")
         func save<V: View>(_ view: V, _ name: String, _ size: NSSize) {
-            let host = NSHostingView(rootView: view.environmentObject(model).background(Color(nsColor: .windowBackgroundColor)))
+            let host = NSHostingView(rootView: view.environmentObject(model).environment(\.colorScheme, .dark).background(Color(nsColor: .windowBackgroundColor)))
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20000, y: 0), size: size), styleMask: [.titled], backing: .buffered, defer: false)
+            window.appearance = NSAppearance(named: .darkAqua)
             window.contentView = host
             window.orderFrontRegardless()
             defer { window.orderOut(nil) }
             host.frame = NSRect(origin: .zero, size: size)
             host.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { fatalError("Cannot render \(name)") }
             host.cacheDisplay(in: host.bounds, to: rep)
-            try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent(name + ".png"))
+            guard let png = rep.representation(using: .png, properties: [:]) else { fatalError("Cannot encode \(name)") }
+            do { try png.write(to: dir.appendingPathComponent(name + ".png")) }
+            catch { fatalError("Cannot save \(name): \(error)") }
         }
-        save(MenuView(), "menu", NSSize(width: 352, height: 470))
-        for (tab, name) in [(AppModel.SettingsTab.games, "games"), (.wheel, "wheel"), (.forceFeedback, "ffb"), (.trueForce, "trueforce"), (.inputs, "inputs"), (.general, "general")] {
-            model.settingsTab = tab
-            save(SettingsView(), "settings-" + name, NSSize(width: 960, height: tab == .wheel ? 1560 : 640))
+        for (name, wheel) in [("g923", BridgeWheelModel.g923 as BridgeWheelModel?), ("g29", .g29), ("disconnected", nil)] {
+            var status = FFBBridge.Status()
+            status.running = true
+            status.wheelConnected = wheel != nil
+            status.wheelModel = wheel
+            status.trueForceAvailable = wheel == .g923
+            status.gameActive = wheel != nil
+            status.effectsPlaying = wheel == nil ? 0 : 3
+            status.output = wheel == nil ? 0 : 0.24
+            status.rawSteering = wheel == nil ? 32768 : 35025
+            status.input.connected = wheel != nil
+            status.input.wheelModel = wheel
+            status.input.throttle = wheel == nil ? 65535 : 27525
+            status.input.brake = 65535
+            status.input.clutch = wheel == nil ? 65535 : 57670
+            status.tfStreaming = wheel == .g923
+            status.telemetry = wheel == .g923
+            status.trueForce = wheel == .g923 ? "TrueForce streaming." : "TrueForce unavailable."
+            status.message = wheel == nil ? "Waiting for a wheel…" : "Game connected — force feedback active."
+            status.gameProcessID = wheel == nil ? 0 : 4242
+            model.status = status
+            model.settingsTab = .overview
+            save(MenuView(), "menu-" + name, NSSize(width: 360, height: wheel == .g923 ? 570 : 540))
+            save(SettingsView(), "window-" + name, NSSize(width: 1100, height: 780))
+            if CommandLine.arguments.contains("--snapshot-all") {
+                for (tab, page) in [(AppModel.SettingsTab.games, "games"), (.wheel, "wheel"), (.forceFeedback, "ffb"), (.trueForce, "trueforce"), (.inputs, "inputs"), (.general, "general")] {
+                    model.settingsTab = tab
+                    save(SettingsView(), "settings-" + name + "-" + page, NSSize(width: 1100, height: 900))
+                }
+            }
         }
+        print("Rendered fixture states only: discovery, hardware output and game scanning disabled.")
     }
 }

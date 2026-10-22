@@ -8,6 +8,9 @@ final class FFBBridge: @unchecked Sendable {
     struct Status: Equatable {
         var running = false
         var wheelConnected = false
+        var wheelModel: BridgeWheelModel?
+        var trueForceAvailable = false
+        var updatedAt: TimeInterval = 0
         var gameProcessID: UInt32 = 0
         var gameActive = false
         var effectsPlaying = 0
@@ -26,6 +29,9 @@ final class FFBBridge: @unchecked Sendable {
         var strength = 0.6, engine = 0.5, road = 0.6, slip = 0.6
     }
     private static let supportedProducts = [0xc266, 0xc24f] // G923 PlayStation/PC, G29
+
+    private let hardwareEnabled: Bool
+    init(hardwareEnabled: Bool = true) { self.hardwareEnabled = hardwareEnabled }
 
     private let lock = NSLock()
     private var _status = Status()
@@ -52,6 +58,7 @@ final class FFBBridge: @unchecked Sendable {
     func requestCalibration() { lock.withLock { _calibrationRequest = true } }
 
     func start() {
+        guard hardwareEnabled else { return }
         let alreadyRunning = lock.withLock { () -> Bool in
             if keepRunning { return true }
             keepRunning = true
@@ -165,7 +172,12 @@ final class FFBBridge: @unchecked Sendable {
         lastLEDs = 0
         send(LogitechWheelCommand.leds(0, length: outputLength))
         openTrueForce(manager: manager, product: IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? Int ?? 0)
-        update { $0.wheelConnected = true; $0.message = "Wheel ready. Start the game." }
+        update {
+            $0.wheelConnected = true; $0.wheelModel = input.wheelModel
+            $0.trueForceAvailable = tfDevice != nil
+            $0.updatedAt = ProcessInfo.processInfo.systemUptime
+            $0.message = "Wheel ready. Start the game."
+        }
     }
 
     private func openTrueForce(manager: IOHIDManager, product: Int) {
@@ -238,7 +250,11 @@ final class FFBBridge: @unchecked Sendable {
         published = input
         shared?.publish(input)
         revLights.reset()
-        update { $0.wheelConnected = false; $0.output = 0; $0.input = BridgeInput(); $0.message = message }
+        update {
+            $0.wheelConnected = false; $0.wheelModel = nil; $0.trueForceAvailable = false
+            $0.tfStreaming = false; $0.telemetry = false; $0.gameActive = false
+            $0.output = 0; $0.input = BridgeInput(); $0.rawSteering = 32768; $0.message = message
+        }
     }
 
     private func receive(_ value: IOHIDValue) {
@@ -347,6 +363,9 @@ final class FFBBridge: @unchecked Sendable {
             }
         }
         update {
+            $0.updatedAt = now
+            $0.trueForceAvailable = tfDevice != nil
+            $0.wheelModel = input.wheelModel
             $0.gameProcessID = state.processID
             $0.gameActive = gameActive
             $0.effectsPlaying = playing

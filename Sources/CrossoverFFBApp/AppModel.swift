@@ -15,20 +15,28 @@ final class AppModel: ObservableObject {
     }
     let icon = IconState()
     static var current: AppModel? { shared }
-    let bridge = FFBBridge()
-    private let defaults = UserDefaults.standard
+    let bridge: FFBBridge
+    let isPreview: Bool
+    private let defaults: UserDefaults
+    @Published private var presentationTime = ProcessInfo.processInfo.systemUptime
+    var presentation: WheelPresentation {
+        WheelPresentation(running: status.running, connected: status.wheelConnected,
+                          model: status.wheelModel, trueForceInterfaceAvailable: status.trueForceAvailable,
+                          age: isPreview ? 0 : presentationTime - status.updatedAt)
+    }
+    var showsTrueForce: Bool { presentation.showsTrueForce }
     private var timer: Timer?
     private var settingsWindow: NSWindow?
 
     @Published var status = FFBBridge.Status()
-    @Published var strength: Double { didSet { bridge.strength = strength / 100; defaults.set(strength, forKey: "strength") } }
-    @Published var reverse: Bool { didSet { bridge.reverseDirectional = reverse; defaults.set(reverse, forKey: "reverse") } }
-    @Published var autoStart: Bool { didSet { defaults.set(autoStart, forKey: "autoStart") } }
+    @Published var strength: Double { didSet { guard !isPreview else { return }; bridge.strength = strength / 100; defaults.set(strength, forKey: "strength") } }
+    @Published var reverse: Bool { didSet { guard !isPreview else { return }; bridge.reverseDirectional = reverse; defaults.set(reverse, forKey: "reverse") } }
+    @Published var autoStart: Bool { didSet { guard !isPreview else { return }; defaults.set(autoStart, forKey: "autoStart") } }
     /// Shared with the scene's @AppStorage("showInMenuBar"), which also changes when the icon is
     /// ⌘-dragged out of the menu bar; Settings is then the way back in.
     @Published var showInMenuBar: Bool {
         didSet {
-            guard showInMenuBar != oldValue else { return }
+            guard !isPreview, showInMenuBar != oldValue else { return }
             if defaults.bool(forKey: "showInMenuBar") != showInMenuBar { defaults.set(showInMenuBar, forKey: "showInMenuBar") }
             if !showInMenuBar { DispatchQueue.main.async { MainActor.assumeIsolated { self.showSettings(.general) } } }
         }
@@ -41,14 +49,14 @@ final class AppModel: ObservableObject {
     /// G HUB-style wheel options (range, sensitivity, centering spring, pedals, rev lights).
     @Published var wheel: WheelSettings {
         didSet {
-            guard wheel != oldValue else { return }
+            guard !isPreview, wheel != oldValue else { return }
             bridge.wheel = wheel
             if let data = try? JSONEncoder().encode(wheel) { defaults.set(data, forKey: "wheel") }
         }
     }
     @Published var motorDetected: Bool
     @Published var tfMotorDetected: Bool
-    @Published var settingsTab = SettingsTab.games
+    @Published var settingsTab = SettingsTab.overview
 
     // Games
     @Published var games: [GameEntry] = []
@@ -65,9 +73,12 @@ final class AppModel: ObservableObject {
     let installer: BridgeInstaller
 
     struct Notice: Identifiable { let id = UUID(); var title: String; var message: String }
-    enum SettingsTab: Hashable { case games, wheel, forceFeedback, trueForce, inputs, general }
+    enum SettingsTab: Hashable { case overview, games, wheel, forceFeedback, trueForce, inputs, general }
 
-    init() {
+    init(preview: Bool = CommandLine.arguments.contains("--snapshot")) {
+        isPreview = preview
+        bridge = FFBBridge(hardwareEnabled: !preview)
+        defaults = preview ? UserDefaults(suiteName: "crossover-ffb-preview-\(UUID().uuidString)")! : .standard
         defaults.register(defaults: ["strength": 80.0, "reverse": false, "motorSign": 0.0, "autoStart": true,
                                      "showInMenuBar": true, "tfEnabled": true, "tfStrength": 60.0, "tfEngine": 50.0, "tfRoad": 60.0, "tfSlip": 60.0, "tfMotorSign": 0.0])
         strength = defaults.double(forKey: "strength")
@@ -84,6 +95,8 @@ final class AppModel: ObservableObject {
         tfMotorDetected = defaults.double(forKey: "tfMotorSign") != 0
         installer = BridgeInstaller(payload: Self.bundledBridge() ?? Data())
 
+        // Stop before timers, discovery, preference writes or any hardware startup.
+        if preview { return }
         bridge.strength = strength / 100
         bridge.reverseDirectional = reverse
         bridge.wheel = wheel
@@ -101,15 +114,15 @@ final class AppModel: ObservableObject {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 let s = self.bridge.status
+                self.presentationTime = ProcessInfo.processInfo.systemUptime
                 if s != self.status { self.status = s }
+                if !self.showsTrueForce && self.settingsTab == .trueForce { self.settingsTab = .wheel }
                 if s.running != self.icon.running { self.icon.running = s.running }
                 if s.gameActive != self.icon.gameActive { self.icon.gameActive = s.gameActive }
             }
         }
         RunLoop.main.add(timer!, forMode: .common)
-        let snapshot = CommandLine.arguments.contains("--snapshot")
-        if autoStart && !snapshot { bridge.start() }
-        if snapshot { return }
+        if autoStart { bridge.start() }
         rescan()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -140,9 +153,10 @@ final class AppModel: ObservableObject {
 
     var running: Bool { status.running }
     var installedGames: [GameEntry] { games.filter { gameStatus[$0.id] == .installed || gameStatus[$0.id] == .outdated } }
-    func toggleRunning() { if status.running { bridge.stop() } else { bridge.start() }; status = bridge.status }
-    func detectDirection() { bridge.requestCalibration() }
+    func toggleRunning() { guard !isPreview else { return }; if status.running { bridge.stop() } else { bridge.start() }; status = bridge.status }
+    func detectDirection() { guard !isPreview else { return }; bridge.requestCalibration() }
     private func pushTrueForce() {
+        guard !isPreview else { return }
         defaults.set(tfEnabled, forKey: "tfEnabled")
         defaults.set(tfStrength, forKey: "tfStrength"); defaults.set(tfEngine, forKey: "tfEngine")
         defaults.set(tfRoad, forKey: "tfRoad"); defaults.set(tfSlip, forKey: "tfSlip")
@@ -173,9 +187,9 @@ final class AppModel: ObservableObject {
     // MARK: settings window
 
     func showSettings(_ tab: SettingsTab? = nil) {
-        if let tab { settingsTab = tab }
+        if let tab { settingsTab = tab == .trueForce && !showsTrueForce ? .wheel : tab }
         if settingsWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 780),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
             window.title = "crossover-ffb"
             // Sidebar runs the full height under a transparent title bar, as in System Settings.
@@ -184,8 +198,8 @@ final class AppModel: ObservableObject {
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
             window.contentViewController = NSHostingController(rootView: SettingsView().environmentObject(self))
-            window.setContentSize(NSSize(width: 960, height: 640))
-            window.minSize = NSSize(width: 780, height: 540)
+            window.setContentSize(NSSize(width: 1100, height: 780))
+            window.minSize = NSSize(width: 920, height: 640)
             window.center()
             window.setFrameAutosaveName("SettingsWindow2")
             settingsWindow = window
@@ -207,6 +221,7 @@ final class AppModel: ObservableObject {
 
     /// Synchronous scan, for --snapshot.
     func scanNow() {
+        guard !isPreview else { return }
         games = customGames + GameLibrary().discover().filter { !hiddenGames.contains($0.id) }
         gameStatus = Dictionary(games.map { ($0.id, installer.status($0)) }, uniquingKeysWith: { a, _ in a })
         for id in Set(games.compactMap(\.steamAppID)) { artwork[id] = GameArtwork.cover(appID: id) }
@@ -225,6 +240,7 @@ final class AppModel: ObservableObject {
     }
 
     func rescan() {
+        guard !isPreview else { return }
         guard !scanning else { return }
         scanning = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {

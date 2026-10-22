@@ -2,11 +2,10 @@ import AppKit
 import SwiftUI
 import WheelCore
 
-// The large window: a System Settings–style sidebar (Liquid Glass on macOS 26 comes from the
-// system sidebar itself) and pages built from rounded section cards on standard materials.
+// Notes-inspired workspace: quiet sidebar selection and a framed content surface.
 
 enum Radius {
-    static let card: CGFloat = 22
+    static let card: CGFloat = 12
     static let cover: CGFloat = 16
     static let icon: CGFloat = 8
 }
@@ -15,23 +14,39 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        NavigationSplitView {
-            Sidebar()
-                .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 280)
-        } detail: {
-            Group {
-                switch model.settingsTab {
-                case .games: LibraryPage()
-                case .wheel: WheelPage()
-                case .forceFeedback: ForceFeedbackPage()
-                case .trueForce: TrueForcePage()
-                case .inputs: InputsPage()
-                case .general: GeneralPage()
-                }
+        HStack(spacing: 0) {
+            Sidebar().frame(width: 224)
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Workspace").foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    Text(model.presentation.title)
+                    Spacer()
+                    if model.isPreview { Text("Preview · no hardware").foregroundStyle(.secondary) }
+                    Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)
+                }.font(.system(size: 12)).padding(.horizontal, 24).frame(height: 52)
+                Divider().opacity(0.5)
+                Group {
+                    switch model.settingsTab {
+                    case .overview: OverviewPage()
+                    case .games: LibraryPage()
+                    case .wheel: WheelPage()
+                    case .forceFeedback: ForceFeedbackPage()
+                    case .trueForce:
+                        if model.showsTrueForce { TrueForcePage() } else { WheelPage() }
+                    case .inputs: InputsPage()
+                    case .general: GeneralPage()
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Color(nsColor: .textBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator.opacity(0.25)))
+            .padding(8)
         }
-        .frame(minWidth: 780, minHeight: 540)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .tint(.gray)
+        .frame(minWidth: 920, minHeight: 640)
         .alert(item: $model.notice) { notice in
             Alert(title: Text(notice.title), message: Text(notice.message), dismissButton: .default(Text("OK")))
         }
@@ -42,57 +57,54 @@ struct SettingsView: View {
 
 private struct Sidebar: View {
     @EnvironmentObject var model: AppModel
-
     var body: some View {
-        List(selection: Binding(get: { Optional(model.settingsTab) }, set: { if let t = $0 { model.settingsTab = t } })) {
-            Section {
-                SidebarStatus()
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 10, trailing: 0))
-            }
-            Section {
-                item(.games, "Library", "square.grid.2x2.fill", .indigo)
-            }
-            Section("Wheel") {
-                item(.wheel, "Steering Wheel", "steeringwheel.circle.fill", .cyan)
-                item(.forceFeedback, "Force Feedback", "steeringwheel", .blue)
-                item(.trueForce, "TrueForce", "waveform", .purple)
-                item(.inputs, "Wheel Input", "dial.medium.fill", .teal)
-            }
-            Section("App") {
-                item(.general, "General", "gearshape.fill", .gray)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Image(systemName: "steeringwheel").font(.title3)
+                Text("crossover-ffb").font(.system(size: 14, weight: .semibold))
+                Spacer()
+            }.padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 26)
+            VStack(alignment: .leading, spacing: 4) {
+                section("WORKSPACE")
+                item(.overview, "Overview", "square.grid.2x2")
+                item(.games, "Game library", "gamecontroller")
+                section("WHEEL")
+                item(.wheel, "Steering & pedals", "steeringwheel")
+                item(.forceFeedback, "Force feedback", "dial.medium")
+                if model.showsTrueForce { item(.trueForce, "TrueForce", "waveform") }
+                item(.inputs, "Input monitor", "slider.horizontal.3")
+                section("APPLICATION")
+                item(.general, "Settings", "gearshape")
+            }.padding(.horizontal, 12)
+            Spacer(minLength: 16)
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                HStack(spacing: 8) {
+                    Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)
+                    Text(model.presentation.title).font(.system(size: 12, weight: .medium))
+                }
+                Text(model.presentation.isConnected ? "USB · Ready to drive" : "Connect a G29 or G923 to begin")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Toggle("Wheel bridge", isOn: Binding(get: { model.running }, set: { _ in model.toggleRunning() }))
+                    .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
+            }.padding(20)
         }
-        .listStyle(.sidebar)
     }
-
-    func item(_ tab: AppModel.SettingsTab, _ title: String, _ symbol: String, _ color: Color) -> some View {
-        Label { Text(title) } icon: { IconTile(symbol: symbol, color: color, size: 22) }
-            .tag(tab)
+    private func section(_ title: String) -> some View {
+        Text(title).font(.system(size: 9, weight: .medium)).tracking(1).foregroundStyle(.tertiary)
+            .padding(.horizontal, 10).padding(.top, 19).padding(.bottom, 5)
     }
-}
-
-/// Small summary at the top of the sidebar: is everything connected?
-private struct SidebarStatus: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        let s = model.status
-        HStack(spacing: 10) {
-            Image(systemName: "steeringwheel")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(Circle().fill(s.gameActive ? Color.green : s.wheelConnected ? Color.accentColor : Color.secondary.opacity(0.6)))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("crossover-ffb").font(.subheadline.weight(.semibold)).lineLimit(1).fixedSize()
-                Text(!s.running ? "Off" : s.gameActive ? "In game" : s.wheelConnected ? "Wheel ready" : "No wheel")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            Toggle("On", isOn: Binding(get: { model.status.running }, set: { _ in model.toggleRunning() }))
-                .toggleStyle(.switch).controlSize(.mini).labelsHidden()
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.quaternary.opacity(0.6)))
+    private func item(_ tab: AppModel.SettingsTab, _ title: String, _ symbol: String) -> some View {
+        Button { model.settingsTab = tab } label: {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).frame(width: 18).foregroundStyle(.secondary)
+                Text(title)
+                Spacer(minLength: 0)
+            }.font(.system(size: 13, weight: model.settingsTab == tab ? .medium : .regular))
+                .padding(.horizontal, 10).padding(.vertical, 9)
+                .background(model.settingsTab == tab ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).accessibilityAddTraits(model.settingsTab == tab ? .isSelected : [])
     }
 }
 
@@ -121,7 +133,7 @@ struct Page<Accessory: View, Content: View>: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .bottom, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(.largeTitle.weight(.bold))
+                        Text(title).font(.system(size: 25, weight: .semibold))
                         Text(subtitle).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 12)
@@ -130,7 +142,7 @@ struct Page<Accessory: View, Content: View>: View {
                 content
             }
             .padding(.horizontal, 28)
-            .padding(.top, 20)
+            .padding(.top, 26)
             .padding(.bottom, 28)
             .frame(maxWidth: 900, alignment: .leading)
             .frame(maxWidth: .infinity)

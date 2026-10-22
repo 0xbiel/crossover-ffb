@@ -14,7 +14,7 @@ struct WheelPage: View {
                 .glassButton()
                 .disabled(model.wheel == WheelSettings())
         } content: {
-            RotationDial(range: model.wheel.range, steering: model.status.rawSteering, connected: model.status.wheelConnected)
+            RotationDial(range: model.wheel.range, steering: model.status.rawSteering, connected: model.presentation.isConnected, model: model.presentation.visibleModel)
             Card(title: "Steering") {
                 Row(symbol: "arrow.left.and.right.circle.fill", color: .blue, title: "Operating range",
                     subtitle: "Degrees lock to lock. Match the car: about 360° for F1 and GT3, 540° for road cars, 900° for trucks and rally.", divider: false) {
@@ -61,15 +61,17 @@ struct WheelPage: View {
                 .disabled(!model.wheel.centeringSpring)
                 .opacity(model.wheel.centeringSpring ? 1 : 0.5)
             }
-            Card(title: "TrueForce") {
+            Card(title: "Force feedback") {
                 Row(symbol: "bolt.circle.fill", color: .orange, title: "Torque", subtitle: "Overall force feedback strength") {
                     PercentSlider(value: $model.strength)
                 }
+                if model.showsTrueForce {
                 Row(symbol: "waveform", color: .purple, title: "Audio effects", subtitle: "Engine, road and kerb detail from simulated TrueForce", divider: false) {
                     PercentSlider(value: $model.tfStrength)
                 }
                 .disabled(!model.tfEnabled)
                 .opacity(model.tfEnabled ? 1 : 0.5)
+                }
             }
             Card(title: "Pedals") {
                 pedal(0, "Accelerator", "arrow.up.circle.fill", .green)
@@ -104,10 +106,11 @@ struct WheelPage: View {
 
 /// G HUB's rotation dial: an arc of ticks for the wheel's 900°, the operating range lit, and a
 /// marker and readout that follow the wheel live.
-private struct RotationDial: View {
+struct RotationDial: View {
     let range: Int
     let steering: UInt32
     let connected: Bool
+    let model: BridgeWheelModel?
 
     private var angle: Double { (Double(steering) / 32767.5 - 1) * Double(range) / 2 }
 
@@ -145,9 +148,8 @@ private struct RotationDial: View {
                         context.fill(marker, with: .color(.primary))
                     }
                 }
-                Image(systemName: "steeringwheel")
-                    .font(.system(size: 64, weight: .regular))
-                    .foregroundStyle(.secondary)
+                WheelRim(model: model)
+                    .frame(width: 130, height: 130)
                     .rotationEffect(.degrees(connected ? max(-450, min(450, angle)) : 0))
                     .offset(y: 30)
                     .animation(.linear(duration: 0.07), value: steering)
