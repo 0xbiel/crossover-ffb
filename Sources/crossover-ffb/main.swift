@@ -65,7 +65,15 @@ setbuf(stdout, nil) // Readiness must be visible immediately, including redirect
 let args = Array(CommandLine.arguments.dropFirst())
 let command = args.first ?? "list"
 if command == "--help" || command == "help" {
-    print("crossover-ffb list | inspect | watch [seconds 1...300] | inventory | sdk-plan <new-json> <sdk-path> <transport-path>\nRead-only Logitech G923 PS (046d:c266). list enumerates all Logitech HID metadata. inspect lists G923 elements. watch waits for Enter in a terminal, then counts down 3 seconds. It opens only the joystick collection, non-exclusively; no output/feature reports. Axis names are HID usages, physical pedal mapping requires manual observation.")
+    print("crossover-ffb list | inspect | watch [seconds 1...300] | inventory | inventory-export <new-json> | sdk-plan <new-json> <sdk-path> <transport-path> | sdk-audit <sdk> <transport> <sdk-sha256> <transport-sha256>\nRead-only Logitech G923 PS (046d:c266). list enumerates all Logitech HID metadata. inspect lists G923 elements. watch waits for Enter in a terminal, then counts down 3 seconds. It opens only the joystick collection, non-exclusively; no output/feature reports. Axis names are HID usages, physical pedal mapping requires manual observation.")
+    exit(0)
+}
+if command == "inventory-export", args.count == 2 {
+    do {
+        let export = try WheelInventoryExport.capture(from: NativeWheelMetadataSource())
+        try export.save(to: URL(fileURLWithPath: args[1]))
+        print("Saved cached HID metadata/descriptors only. No device opened or report requested/sent.")
+    } catch { fputs("inventory-export: \(error)\n", stderr); exit(1) }
     exit(0)
 }
 if command == "inventory" {
@@ -75,6 +83,15 @@ if command == "inventory" {
         for item in group { print("  collection=\(item.registryID) physical=\(item.physicalID.map(String.init) ?? "unknown") pid=\(hex(Int(item.product))) usage=\(hex(Int(item.usagePage))):\(hex(Int(item.usage)))") }
     }
     exit(0)
+}
+if command == "sdk-audit", args.count == 5 {
+    do {
+        let audit = try SDKArtifactAudit.inspect(sdkURL: URL(fileURLWithPath: args[1]), transportURL: URL(fileURLWithPath: args[2]), expectedSDKHash: args[3], expectedTransportHash: args[4])
+        print("SDK SHA256: \(audit.sdkSHA256)\nTransport SHA256: \(audit.transportSHA256)\nx64 PE DLL header: \(audit.sdkIsX64DLL)\nReviewed hashes match: \(audit.hashesMatch)")
+        print("Read only. Does not verify Authenticode trust, Wine source correspondence or hardware acceptance.")
+        audit.blockingReasons.forEach { print("BLOCKED: \($0)") }
+        exit(audit.blockingReasons.isEmpty ? 0 : 1)
+    } catch { fputs("sdk-audit: \(error)\n", stderr); exit(1) }
 }
 if command == "sdk-plan", args.count == 4 {
     do {

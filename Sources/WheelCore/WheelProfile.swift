@@ -1,7 +1,7 @@
 import Foundation
 
 /// Discovery facts only. Never open, initialize or write a device while classifying it.
-public struct WheelCollection: Equatable, Sendable {
+public struct WheelCollection: Equatable, Codable, Sendable {
     public let registryID: UInt64
     /// USB device ancestor (not the HID collection or interface ancestor). Nil is ungroupable.
     public let physicalID: UInt64?
@@ -10,10 +10,13 @@ public struct WheelCollection: Equatable, Sendable {
     public let name: String
     public let usagePage: UInt32
     public let usage: UInt32
+    /// Cached registry descriptor; reading it does not request a report from hardware.
+    public let reportDescriptor: Data?
     public init(registryID: UInt64, physicalID: UInt64?, vendor: UInt16, product: UInt16,
-                name: String, usagePage: UInt32, usage: UInt32) {
+                name: String, usagePage: UInt32, usage: UInt32, reportDescriptor: Data? = nil) {
         self.registryID = registryID; self.physicalID = physicalID; self.vendor = vendor
         self.product = product; self.name = name; self.usagePage = usagePage; self.usage = usage
+        self.reportDescriptor = reportDescriptor
     }
     public var isJoystick: Bool { usagePage == 1 && [4, 5, 8].contains(usage) }
     public var isTrueForce: Bool { usagePage == 0xfffd && usage == 0xfd01 }

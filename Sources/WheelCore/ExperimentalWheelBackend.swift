@@ -56,7 +56,7 @@ public struct HIDPPDiscovery: Sendable {
     public mutating func disconnect() { pending = nil; forceFeatureIndex = nil; poisoned = true }
 }
 
-/// Abstract acknowledged effect lifecycle. Wire encoders remain unavailable pending Xbox captures.
+/// Abstract acknowledged effect lifecycle. See HIDPPForceSession for the offline wire implementation.
 /// One operation at a time; failures invalidate every slot instead of guessing hardware state.
 public struct HIDPPEffectLifecycle: Sendable {
     public enum Operation: Equatable, Sendable { case allocate, start(UInt8), stop(UInt8), erase(UInt8) }
