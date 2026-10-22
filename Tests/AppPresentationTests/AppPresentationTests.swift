@@ -4,6 +4,50 @@ import WheelCore
 @testable import CrossoverFFBApp
 
 final class AppPresentationTests: XCTestCase {
+    func testHardwareDisabledRejectsEveryOutputModeBeforeWorkerCreation() {
+        for mode: WheelOutputMode in [.appManaged, .sdkInputOnly, .passive] {
+            let bridge = FFBBridge(hardwareEnabled: false, outputMode: mode)
+            XCTAssertFalse(bridge.start())
+            XCTAssertFalse(bridge.status.running)
+            XCTAssertEqual(bridge.status.updatedAt, 0)
+            bridge.requestCalibration()
+            XCTAssertFalse(bridge.start())
+            bridge.stop()
+        }
+        // Metadata-only also avoids a worker even outside demo mode.
+        XCTAssertFalse(FFBBridge(hardwareEnabled: true, outputMode: .passive).start())
+    }
+
+    func testSDKInputOnlyPublishesIdentityFreshnessAndClearsTelemetryPresentation() async {
+        await MainActor.run {
+            let model = AppModel(preview: true)
+            var sample = BridgeInput()
+            sample.connected = true; sample.wheelModel = .g923; sample.steering = 40000
+            var status = FFBBridge.Status()
+            status.running = true; status.trueForceAvailable = true; status.tfStreaming = true
+            status.telemetry = true; status.gameProcessID = 123; status.gameActive = true
+            status.effectsPlaying = 5; status.output = 0.8; status.leds = 31
+            status.recordSDKInput(sample, rawSteering: 41000, now: 50)
+            model.status = status
+            XCTAssertEqual(status.wheelModel, .g923); XCTAssertEqual(status.updatedAt, 50)
+            XCTAssertEqual(status.input.steering, 40000); XCTAssertEqual(status.rawSteering, 41000)
+            XCTAssertEqual(model.presentation.visibleModel, .g923)
+            XCTAssertFalse(model.showsTrueForce)
+            XCTAssertFalse(status.trueForceAvailable || status.tfStreaming || status.telemetry || status.gameActive)
+            XCTAssertEqual(status.gameProcessID, 0); XCTAssertEqual(status.effectsPlaying, 0)
+            XCTAssertEqual(status.output, 0); XCTAssertEqual(status.leds, 0)
+            status.recordSDKInput(sample, rawSteering: 42000, now: 51)
+            XCTAssertEqual(status.updatedAt, 51)
+            status.recordDisconnect(message: "Disconnected", now: 52)
+            model.status = status
+            XCTAssertNil(status.wheelModel); XCTAssertFalse(status.wheelConnected)
+            XCTAssertEqual(status.input, BridgeInput()); XCTAssertEqual(status.rawSteering, 32768)
+            XCTAssertEqual(status.updatedAt, 52); XCTAssertEqual(status.trueForce, "TrueForce off.")
+            XCTAssertFalse(model.presentation.isConnected); XCTAssertFalse(model.showsTrueForce)
+            XCTAssertFalse(model.bridge.start())
+        }
+    }
+
     func testInteractiveDemoTransitionsRemainHardwareDisabled() async {
         await MainActor.run {
             let model = AppModel(preview: true)
@@ -26,6 +70,19 @@ final class AppPresentationTests: XCTestCase {
             XCTAssertFalse(model.bridge.status.running)
             XCTAssertFalse(model.launchAtLogin)
             XCTAssertTrue(model.games.isEmpty)
+        }
+    }
+
+    func testExperimentalInventoryDoesNotBecomeGameIdentityOrArtwork() async {
+        await MainActor.run {
+            for product: UInt16 in [0xc26d, 0xc26e, 0xc276, 0xc272, 0xc268, 0xffff] {
+                let metadata = WheelCollection(registryID: 1, physicalID: 2, vendor: 0x046d,
+                                               product: product, name: "Unaccepted wheel", usagePage: 1, usage: 4)
+                XCTAssertFalse(WheelProfile.resolve([metadata]).defaultOutputAllowed)
+                let gameModel = BridgeWheelModel(rawValue: UInt32(product))
+                XCTAssertNil(gameModel)
+                XCTAssertNil(WheelRimAssets.image(for: gameModel))
+            }
         }
     }
 

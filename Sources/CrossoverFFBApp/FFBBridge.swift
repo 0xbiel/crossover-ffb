@@ -23,6 +23,22 @@ final class FFBBridge: @unchecked Sendable {
         var trueForce = "TrueForce off."
         var telemetry = false
         var tfStreaming = false
+
+        /// Shared by attach and tick: SDK ownership never advertises telemetry controls.
+        mutating func recordSDKInput(_ sample: BridgeInput, rawSteering: UInt32, now: TimeInterval) {
+            updatedAt = now; wheelConnected = sample.connected
+            wheelModel = sample.connected ? sample.wheelModel : nil
+            input = sample; self.rawSteering = rawSteering
+            trueForceAvailable = false; tfStreaming = false; telemetry = false
+            gameProcessID = 0; gameActive = false; effectsPlaying = 0; output = 0; leds = 0
+            message = "Input only; SDK transport acceptance required."
+            trueForce = "App output disabled (SDK owner)."
+        }
+        mutating func recordDisconnect(message: String, now: TimeInterval) {
+            let wasRunning = running
+            self = Status()
+            running = wasRunning; updatedAt = now; self.message = message
+        }
     }
     struct TrueForceSettings: Equatable, Sendable {
         var enabled = true
@@ -31,7 +47,14 @@ final class FFBBridge: @unchecked Sendable {
     private static let supportedProducts = [0xc266, 0xc24f] // G923 PlayStation/PC, G29
 
     private let hardwareEnabled: Bool
-    init(hardwareEnabled: Bool = true) { self.hardwareEnabled = hardwareEnabled }
+    // Immutable for a worker lifetime: SDK mode cannot fall back to app output.
+    private let outputMode: WheelOutputMode
+    init(hardwareEnabled: Bool = true,
+         outputMode: WheelOutputMode = CommandLine.arguments.contains("--sdk-input-only") ? .sdkInputOnly : .appManaged) {
+        self.hardwareEnabled = hardwareEnabled
+        self.outputMode = outputMode
+    }
+
 
     private let lock = NSLock()
     private var _status = Status()
@@ -55,21 +78,27 @@ final class FFBBridge: @unchecked Sendable {
     var tfMotorSign: Double { get { lock.withLock { _tfMotorSign } } set { lock.withLock { _tfMotorSign = newValue < 0 ? -1 : 1 } } }
     var trueForce: TrueForceSettings { get { lock.withLock { _tf } } set { lock.withLock { _tf = newValue } } }
     var wheel: WheelSettings { get { lock.withLock { _wheel } } set { lock.withLock { _wheel = newValue } } }
-    func requestCalibration() { lock.withLock { _calibrationRequest = true } }
+    func requestCalibration() {
+        guard hardwareEnabled, outputMode.appMayWrite else { return }
+        lock.withLock { _calibrationRequest = true }
+    }
 
-    func start() {
-        guard hardwareEnabled else { return }
+    @discardableResult
+    func start() -> Bool {
+        // Demo and metadata-only modes cannot create a worker, lease or shared memory.
+        guard hardwareEnabled, outputMode != .passive else { return false }
         let alreadyRunning = lock.withLock { () -> Bool in
             if keepRunning { return true }
             keepRunning = true
             return false
         }
-        guard !alreadyRunning else { return }
+        guard !alreadyRunning else { return false }
         let thread = Thread { [weak self] in self?.run() }
         thread.name = "crossover-ffb bridge"
         thread.qualityOfService = .userInteractive
         self.thread = thread
         thread.start()
+        return true
     }
 
     /// Stops the motor and releases the wheel; waits for the worker (bounded).
@@ -109,6 +138,17 @@ final class FFBBridge: @unchecked Sendable {
 
     private func run() {
         defer { finished.signal() }
+        guard hardwareEnabled, outputMode != .passive else {
+            lock.withLock { keepRunning = false }
+            return
+        }
+        let lease: MotorProcessLease
+        do { lease = try MotorProcessLease() } catch {
+            update { $0.message = "Another wheel session owns the motor lease."; $0.running = false }
+            lock.withLock { keepRunning = false }
+            return
+        }
+        defer { withExtendedLifetime(lease) {} }
         do { shared = try SharedBridge() } catch {
             update { $0.message = "Cannot create shared memory: \(error)"; $0.running = false }
             lock.withLock { keepRunning = false }
@@ -129,10 +169,15 @@ final class FFBBridge: @unchecked Sendable {
 
     private func openWheel() {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
-        IOHIDManagerSetDeviceMatchingMultiple(manager, Self.supportedProducts.map {
+        IOHIDManagerSetDeviceMatchingMultiple(manager, (outputMode == .sdkInputOnly ? [0xc266] : Self.supportedProducts).map {
             [kIOHIDVendorIDKey: 0x046d, kIOHIDProductIDKey: $0, kIOHIDPrimaryUsagePageKey: 1, kIOHIDPrimaryUsageKey: 4] as CFDictionary
         } as CFArray)
-        guard let candidate = (IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice>)?.first else {
+        let candidates = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> ?? []
+        guard outputMode != .sdkInputOnly || candidates.count <= 1 else {
+            update { $0.message = "SDK input-only requires exactly one physical PS G923." }
+            return
+        }
+        guard let candidate = candidates.first else {
             update { $0.wheelConnected = false; $0.message = "Waiting for a Logitech G923 (PlayStation/PC) or G29 over USB…" }
             return
         }
@@ -164,6 +209,10 @@ final class FFBBridge: @unchecked Sendable {
             var value = Unmanaged<IOHIDValue>.passUnretained(IOHIDValueCreateWithIntegerValue(kCFAllocatorDefault, element, 0, 0))
             if IOHIDDeviceGetValue(candidate, element, &value) == kIOReturnSuccess { receive(value.takeUnretainedValue()) }
         }
+        if outputMode == .sdkInputOnly {
+            update { $0.recordSDKInput(input, rawSteering: input.steering, now: ProcessInfo.processInfo.systemUptime) }
+            return
+        }
         engine.reset()
         lastCode = []
         send(LogitechWheelCommand.stopAll(length: outputLength))
@@ -183,7 +232,7 @@ final class FFBBridge: @unchecked Sendable {
     private func openTrueForce(manager: IOHIDManager, product: Int) {
         tfDevice = nil
         tfStreaming = false
-        guard product == 0xc266 || product == 0xc26d || product == 0xc26e else {
+        guard hardwareEnabled, outputMode.appMayWrite, product == 0xc266 else {
             update { $0.trueForce = "TrueForce: this wheel has none (G923 only)." }
             return
         }
@@ -228,7 +277,8 @@ final class FFBBridge: @unchecked Sendable {
     }
 
     private func sendTF(_ packet: [UInt8], to device: IOHIDDevice) -> Bool {
-        packet.withUnsafeBufferPointer {
+        guard hardwareEnabled, outputMode.appMayWrite else { return false }
+        return packet.withUnsafeBufferPointer {
             IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, CFIndex(TrueForceProtocol.reportID), $0.baseAddress!, $0.count)
         } == kIOReturnSuccess
     }
@@ -250,11 +300,7 @@ final class FFBBridge: @unchecked Sendable {
         published = input
         shared?.publish(input)
         revLights.reset()
-        update {
-            $0.wheelConnected = false; $0.wheelModel = nil; $0.trueForceAvailable = false
-            $0.tfStreaming = false; $0.telemetry = false; $0.gameActive = false
-            $0.output = 0; $0.input = BridgeInput(); $0.rawSteering = 32768; $0.message = message
-        }
+        update { $0.recordDisconnect(message: message, now: ProcessInfo.processInfo.systemUptime) }
     }
 
     private func receive(_ value: IOHIDValue) {
@@ -293,6 +339,10 @@ final class FFBBridge: @unchecked Sendable {
         if wheel != appliedWheel { appliedWheel = wheel; published = wheel.apply(to: input) }
         shared.publish(device == nil ? input : published)
         guard device != nil else { return }
+        guard hardwareEnabled, outputMode.appMayWrite else {
+            update { $0.recordSDKInput(published, rawSteering: input.steering, now: now) }
+            return
+        }
         if appliedRange != wheel.range {
             appliedRange = wheel.range
             send(LogitechWheelCommand.range(wheel.range, length: outputLength))
@@ -418,7 +468,7 @@ final class FFBBridge: @unchecked Sendable {
     }
 
     private func send(_ bytes: [UInt8]) {
-        guard let device else { return }
+        guard hardwareEnabled, outputMode.appMayWrite, let device else { return }
         _ = bytes.withUnsafeBufferPointer { IOHIDDeviceSetReport(device, kIOHIDReportTypeOutput, 0, $0.baseAddress!, $0.count) }
     }
 }

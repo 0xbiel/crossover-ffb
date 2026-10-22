@@ -102,7 +102,11 @@ static void instance_info(void *out, int wide) {
         nameA(p->productName, name);
     }
 }
+typedef struct Factory Factory;
+static U32 fa(Factory *);
+static U32 fr(Factory *);
 typedef struct Device Device;
+static HR physical_path(Device *, Property *);
 typedef struct Effect Effect;
 typedef struct {
     HR (*QueryInterface)(Device *, const GUID *, void **);
@@ -145,6 +149,7 @@ typedef struct {
 #define SRC_NOPOV 31u
 struct Device {
     const DeviceVT *v;
+    Factory *pathFactory; /* metadata only; never acquire the physical device */
     U32 refs;
     U64 lock;
     int wide, acquired, paused, actuatorsOff;
@@ -254,6 +259,7 @@ static U32 dr(Device *d) {
     U32 r = decrement(&d->refs);
     if (!r) {
         publish_released(d);
+        if (d->pathFactory) fr(d->pathFactory);
         dispose(d);
         died();
     }
@@ -330,6 +336,11 @@ static HR property(Device *d, const GUID *g, Property *p, int set) {
     U64 id = (U64)g;
     if (id > 0xffff || !p)
         return INVALID;
+    if (id == 12) { /* DIPROP_GUIDANDPATH; always Unicode, including A interfaces */
+        if (!valid_property(p, sizeof(GuidPathProperty)) || p->how || p->object) return INVALID;
+        if (set) return UNSUPPORTED;
+        return physical_path(d, p);
+    }
     if (set && d->acquired && (id == 1 || id == 2))
         return ACQUIRED;
     if (id == 4) {
@@ -1379,7 +1390,6 @@ static const DeviceVT dvt = {dq,
                              actionmap,
                              actionmap,
                              imageinfo};
-typedef struct Factory Factory;
 typedef struct {
     HR (*QueryInterface)(Factory *, const GUID *, void **);
     U32 (*AddRef)(Factory *);
@@ -1437,6 +1447,8 @@ static HR create(Factory *f, const GUID *g, void **out, PTR outer) {
     d->v = &dvt;
     d->refs = 1;
     d->wide = f->wide;
+    d->pathFactory = f;
+    fa(f);
     d->gain = 10000;
     for (int i = 0; i < 4; i++) {
         d->max[i] = 65535;
@@ -1446,10 +1458,55 @@ static HR create(Factory *f, const GUID *g, void **out, PTR outer) {
     *out = d;
     return OK;
 }
+/* Original metadata forwarding implementation. Refuse ambiguous matches instead of
+ * manufacturing a path or selecting the first wheel. Query on demand across reconnects. */
+typedef struct { U32 product, count; GUID instance; int wide; } PathSearch;
+static int path_candidate(const void *info, PTR context) {
+    PathSearch *search = context;
+    const InstanceA *a = info;
+    const InstanceW *w = info;
+    U16 page = search->wide ? w->usagePage : a->usagePage;
+    U16 usage = search->wide ? w->usage : a->usage;
+    const GUID *product = search->wide ? &w->product : &a->product;
+    GUID expected = {search->product, 0, 0, {0, 0, 0x50, 0x49, 0x44, 0x56, 0x49, 0x44}};
+    if (same(product, &expected) && page == 1 && (usage == 4 || usage == 5 || usage == 8)) {
+        search->instance = search->wide ? w->instance : a->instance;
+        search->count++;
+    }
+    return 1;
+}
+static HR physical_path(Device *d, Property *out) {
+    GuidPathProperty *target = (void *)out;
+    zero(&target->guid, sizeof(target->guid));
+    zero(target->path, sizeof(target->path));
+    Snapshot snapshot;
+    if (!read_snapshot(&snapshot) || snapshot.vidPid != 0xc266046d) return NOTFOUND;
+    Factory *f = d->pathFactory;
+    if (!f || !f->real) return UNSUPPORTED;
+    PathSearch search = {0xc266046d, 0, {0}, f->wide};
+    HR result = f->real->v->EnumDevices(f->real, 4, (PTR)path_candidate, &search, 1);
+    if (result != OK) return result;
+    if (search.count != 1) return NOTFOUND;
+    Device *physical = 0;
+    result = f->real->v->CreateDevice(f->real, &search.instance, (void **)&physical, 0);
+    if (result != OK) return result;
+    if (!physical) return NOTFOUND;
+    GuidPathProperty value;
+    zero(&value, sizeof(value));
+    value.h = out[0];
+    result = physical->v->GetProperty(physical, (const GUID *)12, &value.h);
+    physical->v->Release(physical);
+    if (result != OK) return result;
+    U32 n = 0;
+    while (n < 260 && value.path[n]) n++;
+    if (!n || n == 260) return NOTFOUND;
+    copy(target, &value, sizeof(value));
+    return OK;
+}
 /* Real Logitech wheels the system backend would also report. Hidden so the
  * game sees one wheel: ours, which has working force feedback. */
 static int hidden_product(const GUID *product) {
-    static const U32 ids[] = {0xc266046d, 0xc267046d, 0xc26d046d, 0xc26e046d, 0xc24f046d, 0xc262046d};
+    static const U32 ids[] = {0xc266046d, 0xc24f046d};
     for (U32 i = 0; i < sizeof(ids) / sizeof(*ids); i++)
         if (product->a == ids[i] && same(&(GUID){ids[i], 0, 0, {0, 0, 0x50, 0x49, 0x44, 0x56, 0x49, 0x44}}, product))
             return 1;

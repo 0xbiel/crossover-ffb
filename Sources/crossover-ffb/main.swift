@@ -65,10 +65,48 @@ setbuf(stdout, nil) // Readiness must be visible immediately, including redirect
 let args = Array(CommandLine.arguments.dropFirst())
 let command = args.first ?? "list"
 if command == "--help" || command == "help" {
-    print("crossover-ffb list | inspect | watch [seconds 1...300]\nRead-only Logitech G923 PS (046d:c266). list enumerates all Logitech HID metadata. inspect lists G923 elements. watch waits for Enter in a terminal, then counts down 3 seconds. It opens only the joystick collection, non-exclusively; no output/feature reports. Axis names are HID usages, physical pedal mapping requires manual observation.")
+    print("crossover-ffb list | inspect | watch [seconds 1...300] | inventory | inventory-export <new-json> | sdk-plan <new-json> <sdk-path> <transport-path> | sdk-audit <sdk> <transport> <sdk-sha256> <transport-sha256>\nRead-only Logitech G923 PS (046d:c266). list enumerates all Logitech HID metadata. inspect lists G923 elements. watch waits for Enter in a terminal, then counts down 3 seconds. It opens only the joystick collection, non-exclusively; no output/feature reports. Axis names are HID usages, physical pedal mapping requires manual observation.")
+    exit(0)
+}
+if command == "inventory-export", args.count == 2 {
+    do {
+        let export = try WheelInventoryExport.capture(from: NativeWheelMetadataSource())
+        try export.save(to: URL(fileURLWithPath: args[1]))
+        print("Saved cached HID metadata/descriptors only. No device opened or report requested/sent.")
+    } catch { fputs("inventory-export: \(error)\n", stderr); exit(1) }
+    exit(0)
+}
+if command == "inventory" {
+    for group in WheelInventory.snapshot() {
+        let profile = WheelProfile.resolve(group)
+        print("\(profile.model.rawValue): backend=\(profile.backend.rawValue) input=\(profile.hasInput) defaultOutput=\(profile.defaultOutputAllowed)")
+        for item in group { print("  collection=\(item.registryID) physical=\(item.physicalID.map(String.init) ?? "unknown") pid=\(hex(Int(item.product))) usage=\(hex(Int(item.usagePage))):\(hex(Int(item.usage)))") }
+    }
+    exit(0)
+}
+if command == "sdk-audit", args.count == 5 {
+    do {
+        let audit = try SDKArtifactAudit.inspect(sdkURL: URL(fileURLWithPath: args[1]), transportURL: URL(fileURLWithPath: args[2]), expectedSDKHash: args[3], expectedTransportHash: args[4])
+        print("SDK SHA256: \(audit.sdkSHA256)\nTransport SHA256: \(audit.transportSHA256)\nx64 PE DLL header: \(audit.sdkIsX64DLL)\nReviewed hashes match: \(audit.hashesMatch)")
+        print("Read only. Does not verify Authenticode trust, Wine source correspondence or hardware acceptance.")
+        audit.blockingReasons.forEach { print("BLOCKED: \($0)") }
+        exit(audit.blockingReasons.isEmpty ? 0 : 1)
+    } catch { fputs("sdk-audit: \(error)\n", stderr); exit(1) }
+}
+if command == "sdk-plan", args.count == 4 {
+    do {
+        let plan = NativeSDKSetupPlan(sdkPath: args[2], transportPath: args[3])
+        try plan.save(to: URL(fileURLWithPath: args[1]))
+        print("Saved local setup plan only. No SDK loaded, transport installed or bottle modified.")
+        SDKPreflight().blockers.forEach { print("BLOCKED: \($0)") }
+    } catch { fputs("sdk-plan: \(error)\n", stderr); exit(1) }
     exit(0)
 }
 if command == "bridge-probe" {
+    let lease: MotorProcessLease
+    do { lease = try MotorProcessLease() }
+    catch { fputs("Another wheel session owns the bridge lease.\n", stderr); exit(1) }
+    defer { withExtendedLifetime(lease) {} }
     // Without touching the wheel: publish fake centred input and print what the game requests.
     let seconds = args.count == 2 ? Double(args[1]) ?? 10 : 10
     do {
@@ -108,6 +146,10 @@ if command == "install" || command == "uninstall", args.count == 2 {
     exit(0)
 }
 if command == "trueforce-probe" {
+    let lease: MotorProcessLease
+    do { lease = try MotorProcessLease() }
+    catch { fputs("Another wheel session owns the motor lease.\n", stderr); exit(1) }
+    defer { withExtendedLifetime(lease) {} }
     // Bring up the G923 TrueForce stream, hold it silent (zero torque, no vibration) for
     // the given seconds, optionally with a faint 40 Hz buzz, then stop. Reports write results.
     let seconds = args.count >= 2 ? Double(args[1]) ?? 2 : 2
