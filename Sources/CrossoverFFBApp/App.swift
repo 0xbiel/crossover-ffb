@@ -12,17 +12,17 @@ struct CrossoverFFBApp: App {
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     init() {
         // Menu-bar only: no Dock icon or app menu (Info.plist also sets LSUIElement).
-        NSApplication.shared.setActivationPolicy(.accessory)
+        NSApplication.shared.setActivationPolicy(CommandLine.arguments.contains("--demo") ? .regular : .accessory)
         if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
             Snapshot.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             exit(0)
         }
     }
     var body: some Scene {
-        MenuBarExtra(isInserted: $showInMenuBar) {
+        MenuBarExtra(isInserted: CommandLine.arguments.contains("--demo") ? .constant(false) : $showInMenuBar) {
             MenuView().environmentObject(model)
         } label: {
-            MenuBarLabel(icon: model.icon)
+            if CommandLine.arguments.contains("--demo") { Text("FFB Demo") } else { MenuBarLabel(icon: model.icon) }
         }
         .menuBarExtraStyle(.window)
     }
@@ -38,6 +38,15 @@ struct MenuBarLabel: View {
 /// Opening the app again (Finder, Spotlight, Launchpad) shows Settings, so it stays reachable
 /// when someone hides the menu bar icon.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        guard CommandLine.arguments.contains("--demo") else { return }
+        MainActor.assumeIsolated {
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+            AppModel.shared.setPreviewWheel(.g923)
+            AppModel.shared.prepareDemoMenu()
+            AppModel.shared.showSettings(.overview)
+        }
+    }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         MainActor.assumeIsolated { AppModel.current?.showSettings() }
         return false
@@ -83,26 +92,7 @@ enum Snapshot {
             catch { fatalError("Cannot save \(name): \(error)") }
         }
         for (name, wheel) in [("g923", BridgeWheelModel.g923 as BridgeWheelModel?), ("g29", .g29), ("disconnected", nil)] {
-            var status = FFBBridge.Status()
-            status.running = true
-            status.wheelConnected = wheel != nil
-            status.wheelModel = wheel
-            status.trueForceAvailable = wheel == .g923
-            status.gameActive = wheel != nil
-            status.effectsPlaying = wheel == nil ? 0 : 3
-            status.output = wheel == nil ? 0 : 0.24
-            status.rawSteering = wheel == nil ? 32768 : 35025
-            status.input.connected = wheel != nil
-            status.input.wheelModel = wheel
-            status.input.throttle = wheel == nil ? 65535 : 27525
-            status.input.brake = 65535
-            status.input.clutch = wheel == nil ? 65535 : 57670
-            status.tfStreaming = wheel == .g923
-            status.telemetry = wheel == .g923
-            status.trueForce = wheel == .g923 ? "TrueForce streaming." : "TrueForce unavailable."
-            status.message = wheel == nil ? "Waiting for a wheel…" : "Game connected — force feedback active."
-            status.gameProcessID = wheel == nil ? 0 : 4242
-            model.status = status
+            model.setPreviewWheel(wheel)
             model.settingsTab = .overview
             save(MenuView(), "menu-" + name, NSSize(width: 360, height: wheel == .g923 ? 570 : 540))
             save(SettingsView(), "window-" + name, NSSize(width: 1100, height: 780))

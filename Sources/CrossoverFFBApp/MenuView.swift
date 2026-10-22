@@ -13,7 +13,7 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "steeringwheel").font(.title2).foregroundStyle(.white.opacity(0.8))
+                Image(systemName: "steeringwheel").font(.title2).foregroundStyle(.primary.opacity(0.8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("crossover-ffb").font(.system(size: 14, weight: .semibold))
                     Text(model.presentation.title).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -81,18 +81,14 @@ struct MenuView: View {
             if model.isPreview { Text("PREVIEW · NO HARDWARE").font(.system(size: 8, weight: .medium)).tracking(1.2).foregroundStyle(.secondary).padding(.top, 8) }
         }
         .padding(20).frame(width: 360)
-        .background {
-            RoundedRectangle(cornerRadius: 22).fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 22).fill(Color(red: 0.055, green: 0.09, blue: 0.15).opacity(0.82)))
-        }
-        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.white.opacity(0.09)))
-        .environment(\.colorScheme, .dark).tint(.mint)
+        .modifier(MenuGlassSurface())
+        .tint(.mint)
     }
     private func meter(_ name: String, value: Double, color: Color) -> some View {
         HStack(spacing: 12) {
             Text(name).frame(width: 76, alignment: .leading).foregroundStyle(.secondary)
             GeometryReader { geo in
-                Capsule().fill(.white.opacity(0.08)).overlay(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.08)).overlay(alignment: .leading) {
                     Capsule().fill(color.opacity(0.8)).frame(width: connected ? geo.size.width * max(0, min(1, value)) : 0)
                 }
             }.frame(height: 4)
@@ -177,5 +173,45 @@ private struct WorkspaceButtonStyle: ButtonStyle {
             .padding(.horizontal, circle ? 9 : 12).padding(.vertical, 8)
             .background(prominent ? Color.accentColor : Color.primary.opacity(configuration.isPressed ? 0.14 : 0.07), in: RoundedRectangle(cornerRadius: circle ? 20 : 7))
             .opacity(enabled ? 1 : 0.4)
+    }
+}
+
+/// Clear the popover hosting window so native glass can sample the desktop behind it.
+private struct TransparentMenuHost: NSViewRepresentable {
+    final class View: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.isOpaque = false
+            window?.backgroundColor = .clear
+        }
+    }
+    func makeNSView(context: Context) -> View { View() }
+    func updateNSView(_ view: View, context: Context) {}
+}
+
+private struct MenuBackdrop: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+private struct MenuGlassSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    func body(content: Content) -> some View {
+        Group {
+            if reduceTransparency {
+                content.background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 22))
+            } else if #available(macOS 26.0, *) {
+                content.glassEffect(.clear, in: RoundedRectangle(cornerRadius: 22))
+            } else {
+                content.background(MenuBackdrop().clipShape(RoundedRectangle(cornerRadius: 22)))
+            }
+        }
+        .background(TransparentMenuHost())
     }
 }

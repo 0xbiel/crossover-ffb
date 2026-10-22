@@ -4,6 +4,31 @@ import WheelCore
 @testable import CrossoverFFBApp
 
 final class AppPresentationTests: XCTestCase {
+    func testInteractiveDemoTransitionsRemainHardwareDisabled() async {
+        await MainActor.run {
+            let model = AppModel(preview: true)
+            model.setPreviewWheel(.g923)
+            XCTAssertTrue(model.showsTrueForce)
+            model.settingsTab = .trueForce
+            model.tfStrength = 37
+            model.setPreviewWheel(.g29)
+            XCTAssertFalse(model.showsTrueForce)
+            XCTAssertEqual(model.settingsTab, .overview)
+            model.setPreviewWheel(nil)
+            XCTAssertFalse(model.presentation.isConnected)
+            model.setPreviewWheel(.g923)
+            XCTAssertEqual(model.tfStrength, 37)
+            model.bridge.start()
+            model.toggleRunning()
+            model.scanNow()
+            model.rescan()
+            model.launchAtLogin = true
+            XCTAssertFalse(model.bridge.status.running)
+            XCTAssertFalse(model.launchAtLogin)
+            XCTAssertTrue(model.games.isEmpty)
+        }
+    }
+
     func testModelRimResourcesHaveTransparencyAndPaddles() async throws {
         try await MainActor.run {
             XCTAssertNil(WheelRimAssets.image(for: nil))

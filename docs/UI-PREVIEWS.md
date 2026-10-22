@@ -45,3 +45,9 @@ rights. Future assets should be square transparent cutouts, with the steering ax
 at the canvas centre; both menu and wheel page rotate about that centre using the
 existing steering angle. Only G29 and G923 are selectable models. A base PID does
 not establish which interchangeable rim is attached.
+
+## Interactive demo
+
+Run `CrossoverFFBApp --demo` for a persistent, hardware-disabled workspace. The title says “Demo — No Hardware”; Fixture switches between G923, G29 and disconnected. Menu preview opens the same menu view in a native popover; if macOS has no space for the FFB Demo status item it anchors to the dashboard. Quit with Command-Q. Discovery, bridge workers, installers, calibration, login-item changes and persistent preferences are disabled. Readouts are fixtures, not hardware measurements.
+
+The menu uses untinted native clear Liquid Glass on macOS 26+, a behind-window popover material on macOS 13–15, and an opaque system background with Reduce Transparency. Its hosting window is clear, with no navy overlay. Live screenshots are necessary to assess the backdrop; offscreen snapshot renders cannot prove translucency.

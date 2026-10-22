@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     var showsTrueForce: Bool { presentation.showsTrueForce }
     private var timer: Timer?
     private var settingsWindow: NSWindow?
+    private var demoPopover: NSPopover?
+    private var demoStatusItem: NSStatusItem?
 
     @Published var status = FFBBridge.Status()
     @Published var strength: Double { didSet { guard !isPreview else { return }; bridge.strength = strength / 100; defaults.set(strength, forKey: "strength") } }
@@ -75,7 +77,7 @@ final class AppModel: ObservableObject {
     struct Notice: Identifiable { let id = UUID(); var title: String; var message: String }
     enum SettingsTab: Hashable { case overview, games, wheel, forceFeedback, trueForce, inputs, general }
 
-    init(preview: Bool = CommandLine.arguments.contains("--snapshot")) {
+    init(preview: Bool = CommandLine.arguments.contains("--snapshot") || CommandLine.arguments.contains("--demo")) {
         isPreview = preview
         bridge = FFBBridge(hardwareEnabled: !preview)
         defaults = preview ? UserDefaults(suiteName: "crossover-ffb-preview-\(UUID().uuidString)")! : .standard
@@ -170,14 +172,16 @@ final class AppModel: ObservableObject {
 
     var needsInputPermission: Bool { status.message.contains("Input Monitoring") }
     func openInputMonitoringSettings() {
+        guard !isPreview else { return }
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
     }
 
     // MARK: launch at login
 
     var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
+        get { !isPreview && SMAppService.mainApp.status == .enabled }
         set {
+            guard !isPreview else { return }
             do { if newValue { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } }
             catch { notice = Notice(title: "Couldn't change Open at Login", message: error.localizedDescription) }
             objectWillChange.send()
@@ -191,9 +195,9 @@ final class AppModel: ObservableObject {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 780),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            window.title = "crossover-ffb"
+            window.title = isPreview ? "crossover-ffb Demo — No Hardware" : "crossover-ffb"
             // Sidebar runs the full height under a transparent title bar, as in System Settings.
-            window.titleVisibility = .hidden
+            window.titleVisibility = isPreview ? .visible : .hidden
             window.titlebarAppearsTransparent = true
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
@@ -206,6 +210,67 @@ final class AppModel: ObservableObject {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Deterministic demo data only; never starts a worker or touches shared memory.
+    func setPreviewWheel(_ wheel: BridgeWheelModel?) {
+        guard isPreview else { return }
+        var status = FFBBridge.Status()
+        status.running = true
+        status.wheelConnected = wheel != nil
+        status.wheelModel = wheel
+        status.trueForceAvailable = wheel == .g923
+        status.gameActive = wheel != nil
+        status.effectsPlaying = wheel == nil ? 0 : 3
+        status.output = wheel == nil ? 0 : 0.24
+        status.rawSteering = wheel == nil ? 32768 : 35025
+        status.input.connected = wheel != nil
+        status.input.wheelModel = wheel
+        status.input.throttle = wheel == nil ? 65535 : 27525
+        status.input.brake = 65535
+        status.input.clutch = wheel == nil ? 65535 : 57670
+        status.tfStreaming = wheel == .g923
+        status.telemetry = wheel == .g923
+        status.trueForce = wheel == .g923 ? "TrueForce streaming." : "TrueForce unavailable."
+        status.message = wheel == nil ? "Waiting for a wheel…" : "Game connected — force feedback active."
+        status.gameProcessID = wheel == nil ? 0 : 4242
+        self.status = status
+        if !showsTrueForce && settingsTab == .trueForce { settingsTab = .overview }
+    }
+
+    func prepareDemoMenu() {
+        guard isPreview, demoStatusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.title = "FFB Demo"
+        item.button?.target = self
+        item.button?.action = #selector(toggleDemoMenu)
+        demoStatusItem = item
+    }
+
+    @objc private func toggleDemoMenu() {
+        if demoPopover?.isShown == true { demoPopover?.performClose(nil) }
+        else { showDemoMenu() }
+    }
+
+    func showDemoMenu() {
+        guard isPreview else { return }
+        prepareDemoMenu()
+        guard let button = demoStatusItem?.button else { return }
+        if demoPopover == nil {
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentSize = NSSize(width: 360, height: 570)
+            popover.contentViewController = NSHostingController(rootView: MenuView().environmentObject(self))
+            demoPopover = popover
+        }
+        if let host = button.window, host.frame.height > 0 {
+            demoPopover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        } else if let content = settingsWindow?.contentView {
+            // macOS can hide status items when the menu bar runs out of room.
+            demoPopover?.show(relativeTo: NSRect(x: content.bounds.maxX - 100, y: content.bounds.maxY - 64, width: 80, height: 24),
+                              of: content, preferredEdge: .minY)
+        }
+        demoPopover?.contentViewController?.view.window?.makeKey()
     }
 
     // MARK: games
@@ -229,6 +294,7 @@ final class AppModel: ObservableObject {
 
     /// Fetches cover art for games that do not have it yet (in the background).
     func loadArtwork() {
+        guard !isPreview else { return }
         let wanted = Set(games.compactMap(\.steamAppID)).subtracting(artworkRequested)
         artworkRequested.formUnion(wanted)
         for id in wanted {
@@ -269,6 +335,7 @@ final class AppModel: ObservableObject {
     func uninstall(_ game: GameEntry) { run(game, verb: "uninstall") { try $0.uninstall(game) } }
 
     private func run(_ game: GameEntry, verb: String, _ action: @escaping @Sendable (BridgeInstaller) throws -> Void) {
+        guard !isPreview else { return }
         busyGame = game.id
         let installer = installer
         DispatchQueue.global(qos: .userInitiated).async {
@@ -289,6 +356,7 @@ final class AppModel: ObservableObject {
 
     /// Lets the user add any 64-bit Windows game: pick its exe, the prefix is worked out when possible.
     func addGame(replacing original: GameEntry? = nil) {
+        guard !isPreview else { return }
         let panel = NSOpenPanel()
         panel.title = original == nil ? "Choose the game's .exe" : "Choose the .exe that actually runs \(original!.name)"
         panel.message = "Pick the Windows program of the game (for Unreal Engine games, the …-Win64-Shipping.exe inside Binaries/Win64)."
@@ -313,6 +381,7 @@ final class AppModel: ObservableObject {
     }
 
     func choosePrefixFolder() -> WinePrefix? {
+        guard !isPreview else { return nil }
         let panel = NSOpenPanel()
         panel.title = "Choose the Wine prefix or CrossOver bottle"
         panel.message = "The folder that contains user.reg and drive_c."
@@ -328,6 +397,7 @@ final class AppModel: ObservableObject {
     }
 
     func add(exe: URL, prefix: WinePrefix, name: String? = nil, source: String? = nil, hiding original: GameEntry? = nil) {
+        guard !isPreview else { return }
         let known = KnownGame.matching(executable: exe)
         let entry = GameEntry(name: name ?? known?.name ?? exe.deletingPathExtension().lastPathComponent, executable: exe, prefix: prefix,
                               source: source ?? prefix.label, known: known != nil, telemetry: known?.telemetry ?? false, custom: true,
@@ -339,8 +409,9 @@ final class AppModel: ObservableObject {
     }
 
     func remove(_ game: GameEntry) {
+        guard !isPreview else { return }
         if game.custom { customGames = customGames.filter { $0.id != game.id } } else { hiddenGames.insert(game.id) }
         rescan()
     }
-    func showHiddenGames() { hiddenGames = []; rescan() }
+    func showHiddenGames() { guard !isPreview else { return }; hiddenGames = []; rescan() }
 }

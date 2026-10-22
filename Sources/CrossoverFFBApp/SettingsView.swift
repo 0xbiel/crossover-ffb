@@ -22,7 +22,17 @@ struct SettingsView: View {
                     Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
                     Text(model.presentation.title)
                     Spacer()
-                    if model.isPreview { Text("Preview · no hardware").foregroundStyle(.secondary) }
+                    if model.isPreview {
+                        Text("Preview · no hardware").foregroundStyle(.secondary)
+                        if CommandLine.arguments.contains("--demo") {
+                            Menu("Fixture") {
+                                Button("G923") { model.setPreviewWheel(.g923) }
+                                Button("G29") { model.setPreviewWheel(.g29) }
+                                Button("Disconnected") { model.setPreviewWheel(nil) }
+                            }
+                            Button("Menu preview") { model.showDemoMenu() }.buttonStyle(.bordered)
+                        }
+                    }
                     Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)
                 }.font(.system(size: 12)).padding(.horizontal, 24).frame(height: 52)
                 Divider().opacity(0.5)
