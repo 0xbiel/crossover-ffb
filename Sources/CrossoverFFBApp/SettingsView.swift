@@ -24,13 +24,12 @@ struct SettingsView: View {
                     Spacer()
                     if model.isPreview {
                         Text("Preview · no hardware").foregroundStyle(.secondary)
-                        if CommandLine.arguments.contains("--demo") {
+                        if AppRuntime.isDemo {
                             Menu("Fixture") {
                                 Button("G923") { model.setPreviewWheel(.g923) }
                                 Button("G29") { model.setPreviewWheel(.g29) }
                                 Button("Disconnected") { model.setPreviewWheel(nil) }
                             }
-                            Button("Menu preview") { model.showDemoMenu() }.buttonStyle(.bordered)
                         }
                     }
                     Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)

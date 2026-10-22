@@ -48,6 +48,13 @@ final class AppPresentationTests: XCTestCase {
         }
     }
 
+    func testDemoLaunchFlagCannotDependOnShellArgumentsAlone() {
+        XCTAssertTrue(AppRuntime.isDemo(arguments: [], bundleFlag: true))
+        XCTAssertTrue(AppRuntime.isDemo(arguments: ["--demo"], bundleFlag: nil))
+        XCTAssertFalse(AppRuntime.isDemo(arguments: [], bundleFlag: nil))
+        XCTAssertFalse(AppRuntime.isDemo(arguments: [], bundleFlag: false))
+    }
+
     func testInteractiveDemoTransitionsRemainHardwareDisabled() async {
         await MainActor.run {
             let model = AppModel(preview: true)

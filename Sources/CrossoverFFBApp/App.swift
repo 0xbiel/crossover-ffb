@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 import WheelCore
 
+enum AppRuntime {
+    static var isDemo: Bool { isDemo(arguments: CommandLine.arguments, bundleFlag: Bundle.main.object(forInfoDictionaryKey: "FFBHardwareDisabledDemo") as? Bool) }
+    static func isDemo(arguments: [String], bundleFlag: Bool?) -> Bool { arguments.contains("--demo") || bundleFlag == true }
+}
+
 @main
 struct CrossoverFFBApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -12,17 +17,17 @@ struct CrossoverFFBApp: App {
     @AppStorage("showInMenuBar") private var showInMenuBar = true
     init() {
         // Menu-bar only: no Dock icon or app menu (Info.plist also sets LSUIElement).
-        NSApplication.shared.setActivationPolicy(CommandLine.arguments.contains("--demo") ? .regular : .accessory)
+        NSApplication.shared.setActivationPolicy(.accessory)
         if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
             Snapshot.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             exit(0)
         }
     }
     var body: some Scene {
-        MenuBarExtra(isInserted: CommandLine.arguments.contains("--demo") ? .constant(false) : $showInMenuBar) {
+        MenuBarExtra(isInserted: AppRuntime.isDemo ? .constant(true) : $showInMenuBar) {
             MenuView().environmentObject(model)
         } label: {
-            if CommandLine.arguments.contains("--demo") { Text("FFB Demo") } else { MenuBarLabel(icon: model.icon) }
+            if AppRuntime.isDemo { Text("FFB Demo") } else { MenuBarLabel(icon: model.icon) }
         }
         .menuBarExtraStyle(.window)
     }
@@ -39,11 +44,10 @@ struct MenuBarLabel: View {
 /// when someone hides the menu bar icon.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard CommandLine.arguments.contains("--demo") else { return }
+        guard AppRuntime.isDemo else { return }
         MainActor.assumeIsolated {
             NSApp.appearance = NSAppearance(named: .darkAqua)
             AppModel.shared.setPreviewWheel(.g923)
-            AppModel.shared.prepareDemoMenu()
             AppModel.shared.showSettings(.overview)
         }
     }

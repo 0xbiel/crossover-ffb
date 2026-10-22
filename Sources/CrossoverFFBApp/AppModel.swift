@@ -27,8 +27,6 @@ final class AppModel: ObservableObject {
     var showsTrueForce: Bool { presentation.showsTrueForce }
     private var timer: Timer?
     private var settingsWindow: NSWindow?
-    private var demoPopover: NSPopover?
-    private var demoStatusItem: NSStatusItem?
 
     @Published var status = FFBBridge.Status()
     @Published var strength: Double { didSet { guard !isPreview else { return }; bridge.strength = strength / 100; defaults.set(strength, forKey: "strength") } }
@@ -77,7 +75,7 @@ final class AppModel: ObservableObject {
     struct Notice: Identifiable { let id = UUID(); var title: String; var message: String }
     enum SettingsTab: Hashable { case overview, games, wheel, forceFeedback, trueForce, inputs, general }
 
-    init(preview: Bool = CommandLine.arguments.contains("--snapshot") || CommandLine.arguments.contains("--demo")) {
+    init(preview: Bool = CommandLine.arguments.contains("--snapshot") || AppRuntime.isDemo) {
         isPreview = preview
         bridge = FFBBridge(hardwareEnabled: !preview)
         defaults = preview ? UserDefaults(suiteName: "crossover-ffb-preview-\(UUID().uuidString)")! : .standard
@@ -236,41 +234,6 @@ final class AppModel: ObservableObject {
         status.gameProcessID = wheel == nil ? 0 : 4242
         self.status = status
         if !showsTrueForce && settingsTab == .trueForce { settingsTab = .overview }
-    }
-
-    func prepareDemoMenu() {
-        guard isPreview, demoStatusItem == nil else { return }
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "FFB Demo"
-        item.button?.target = self
-        item.button?.action = #selector(toggleDemoMenu)
-        demoStatusItem = item
-    }
-
-    @objc private func toggleDemoMenu() {
-        if demoPopover?.isShown == true { demoPopover?.performClose(nil) }
-        else { showDemoMenu() }
-    }
-
-    func showDemoMenu() {
-        guard isPreview else { return }
-        prepareDemoMenu()
-        guard let button = demoStatusItem?.button else { return }
-        if demoPopover == nil {
-            let popover = NSPopover()
-            popover.behavior = .transient
-            popover.contentSize = NSSize(width: 360, height: 570)
-            popover.contentViewController = NSHostingController(rootView: MenuView().environmentObject(self))
-            demoPopover = popover
-        }
-        if let host = button.window, host.frame.height > 0 {
-            demoPopover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        } else if let content = settingsWindow?.contentView {
-            // macOS can hide status items when the menu bar runs out of room.
-            demoPopover?.show(relativeTo: NSRect(x: content.bounds.maxX - 100, y: content.bounds.maxY - 64, width: 80, height: 24),
-                              of: content, preferredEdge: .minY)
-        }
-        demoPopover?.contentViewController?.view.window?.makeKey()
     }
 
     // MARK: games
