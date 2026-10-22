@@ -94,3 +94,5 @@ New read-only commands (implemented but not run on hardware in this task):
 The existing `FFBBridge.swift` integration overlap remains unchanged. This audit adds only core modules, tests and CLI read-only commands; it does not touch the UI working tree, shared-memory ABI, bottles or installed runtime.
 
 Completion-audit validation: `scripts/dev test` passed **61 tests** (including nine new audit tests); app and CLI targets compiled. `git diff --check` passed. C sources did not change in this audit; the preceding sanitizer/Win64 build results still apply. Tests used synthetic files and mock process/metadata/transport objects only. No hardware inventory/export or SDK audit against a real proprietary binary was run.
+
+Cross-review correction: motor lease tests now inject an internal lock path in unique temporary directories; they never contend on the production per-user lock. Public production construction retains the same path and identical owner/type/no-symlink/link-count checks. Isolation, reacquisition, symlink, hard-link and directory-rejection tests pass (62 total Swift tests at this checkpoint).

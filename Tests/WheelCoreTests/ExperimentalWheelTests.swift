@@ -166,12 +166,39 @@ final class ExperimentalWheelTests: XCTestCase {
         do { _ = try await session.discoverForceFeature(now: 2); XCTFail("disconnected") }
         catch { XCTAssertEqual(error as? WheelProtocolError, .disconnected) }
     }
+    func testLeasePathsAreIndependentAndRejectLinks() throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("motor-isolation-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let firstPath = directory.appendingPathComponent("first.lock")
+        let secondPath = directory.appendingPathComponent("second.lock")
+        let first = try MotorProcessLease(lockPath: firstPath.path)
+        let second = try MotorProcessLease(lockPath: secondPath.path)
+        try withExtendedLifetime((first, second)) {
+            XCTAssertThrowsError(try MotorProcessLease(lockPath: firstPath.path))
+            XCTAssertThrowsError(try MotorProcessLease(lockPath: secondPath.path))
+        }
+        let symlink = directory.appendingPathComponent("symlink.lock")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: firstPath)
+        XCTAssertThrowsError(try MotorProcessLease(lockPath: symlink.path))
+        let target = directory.appendingPathComponent("hardlink-target.lock")
+        try Data().write(to: target)
+        let hardlink = directory.appendingPathComponent("hardlink.lock")
+        try FileManager.default.linkItem(at: target, to: hardlink)
+        XCTAssertThrowsError(try MotorProcessLease(lockPath: hardlink.path))
+        XCTAssertThrowsError(try MotorProcessLease(lockPath: target.path))
+        XCTAssertThrowsError(try MotorProcessLease(lockPath: directory.path))
+    }
     func testSingleWriterLeaseAndReversiblePlan() throws {
-        var lease: MotorProcessLease? = try MotorProcessLease()
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("motor-lease-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let lockPath = directory.appendingPathComponent("motor.lock").path
+        var lease: MotorProcessLease? = try MotorProcessLease(lockPath: lockPath)
         XCTAssertNotNil(lease)
-        XCTAssertThrowsError(try MotorProcessLease())
+        XCTAssertThrowsError(try MotorProcessLease(lockPath: lockPath))
         lease = nil
-        let next = try MotorProcessLease()
+        let next = try MotorProcessLease(lockPath: lockPath)
         withExtendedLifetime(next) {}
         let path = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: path) }

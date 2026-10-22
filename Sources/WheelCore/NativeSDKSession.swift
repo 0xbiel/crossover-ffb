@@ -10,9 +10,13 @@ public enum WheelOutputMode: String, Codable, Sendable {
 /// be stopped in preflight. SDK child lifetime must end before this lease is released.
 public final class MotorProcessLease {
     private let descriptor: Int32
-    public init() throws {
-        let path = "/tmp/crossover-ffb-motor-\(getuid()).lock"
-        let fd = Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+    public convenience init() throws {
+        try self.init(lockPath: "/tmp/crossover-ffb-motor-\(getuid()).lock")
+    }
+    /// Internal injection keeps offline tests out of the live application's ownership domain.
+    /// Both entry points use the same owner, type, symlink and link-count checks.
+    internal init(lockPath: String) throws {
+        let fd = Darwin.open(lockPath, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard fd >= 0 else { throw SessionError.busy }
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_uid == getuid(),
