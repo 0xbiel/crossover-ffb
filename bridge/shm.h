@@ -18,7 +18,7 @@
 _Static_assert(SHM_FX + SHM_FX_SIZE * SHM_FX_COUNT <= SHM_SIZE, "shm layout");
 
 typedef struct {
-    U32 axis[4], buttons, hat;
+    U32 axis[4], buttons, hat, vidPid;
     U64 sequence;
 } Snapshot;
 static U32 le32(const unsigned char *p) {
@@ -145,6 +145,9 @@ static int read_snapshot_status(Snapshot *out, U32 *reason) {
     s.buttons = le32(b + 32);
     s.hat = le32(b + 36);
     s.sequence = s1;
+    /* Optional v2 identity extension, qualified in the same seqlock by the
+     * connected word. Old writers use 0/1 and may leave +40 untouched. */
+    s.vidPid = (le32(b + 4) & 2) ? le32(b + 40) : 0;
     *reason = 7;
     if (s.axis[0] > 65535 || s.axis[1] > 65535 || s.axis[2] > 65535 || s.axis[3] > 65535 ||
         (s.buttons & ~0x1ffffffu) || s.hat > 8)

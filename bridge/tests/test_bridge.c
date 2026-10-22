@@ -89,7 +89,109 @@ static DataFormat joystick2(void) {
     return (DataFormat){sizeof(DataFormat), sizeof(ObjectFormat), 1, 272, n, joy2};
 }
 
+static void expect_wide(const U16 *actual, const char *expected) {
+    for (; *expected; actual++, expected++)
+        assert(*actual == (unsigned char)*expected);
+    assert(*actual == 0);
+}
+static int capture_a(const InstanceA *info, PTR ctx) {
+    *(InstanceA *)ctx = *info;
+    return 1;
+}
+static int capture_w(const InstanceW *info, PTR ctx) {
+    *(InstanceW *)ctx = *info;
+    return 1;
+}
+static void expect_identity(Factory *f, Device *d, U32 id, const char *name, int attached) {
+    /* Literal GUID expectations also guard saved binding compatibility. */
+    const GUID instance = {0x43464231, 0x0923, 0x4001, {0x80, 0x01, 0x43, 0x46, 0x42, 0, 0, 1}};
+    const GUID product = {id, 0, 0, {0, 0, 0x50, 0x49, 0x44, 0x56, 0x49, 0x44}};
+    if (f->wide) {
+        InstanceW info = {.size = sizeof(info)}, enumerated = {0};
+        assert(d->v->GetDeviceInfo(d, &info) == OK);
+        assert(same(&info.instance, &instance) && same(&info.ff, &instance));
+        assert(same(&info.product, &product));
+        expect_wide(info.name, name); expect_wide(info.productName, name);
+        assert(f->v->EnumDevices(f, 4, (PTR)capture_w, &enumerated, 0) == OK);
+        assert(memcmp(&info, &enumerated, sizeof(info)) == 0);
+        zero(&enumerated, sizeof(enumerated));
+        assert(f->v->EnumDevices(f, 4, (PTR)capture_w, &enumerated, 1) == OK);
+        assert((enumerated.size != 0) == attached);
+    } else {
+        InstanceA info = {.size = sizeof(info)}, enumerated = {0};
+        assert(d->v->GetDeviceInfo(d, &info) == OK);
+        assert(same(&info.instance, &instance) && same(&info.ff, &instance));
+        assert(same(&info.product, &product));
+        assert(strcmp(info.name, name) == 0 && strcmp(info.productName, name) == 0);
+        assert(f->v->EnumDevices(f, 4, (PTR)capture_a, &enumerated, 0) == OK);
+        assert(memcmp(&info, &enumerated, sizeof(info)) == 0);
+        zero(&enumerated, sizeof(enumerated));
+        assert(f->v->EnumDevices(f, 4, (PTR)capture_a, &enumerated, 1) == OK);
+        assert((enumerated.size != 0) == attached);
+    }
+    struct { Property header; U16 value[260]; } text = {{536, 16, 0, 0}, {0}};
+    for (U64 prop = 13; prop <= 14; prop++) {
+        assert(d->v->GetProperty(d, (const GUID *)prop, &text.header) == OK);
+        expect_wide(text.value, name);
+    }
+    DwordProperty vidPid = {{sizeof(vidPid), 16, 0, 0}, 0};
+    assert(d->v->GetProperty(d, (const GUID *)24, &vidPid.h) == OK);
+    assert(vidPid.value == id);
+    assert(f->v->GetDeviceStatus(f, &instance) == (attached ? OK : 1));
+    assert(d->v->Initialize(d, 0, 0x800, &instance) == OK);
+}
+static void test_identity(void) {
+    const char *g29 = "G29 Driving Force Racing Wheel", *g923 = "G923 Racing Wheel for PlayStation and PC";
+    for (int wide = 0; wide < 2; wide++) {
+        zero(test_shm, sizeof(test_shm));
+        identityVidPid = 0xc266046d; /* independent DLL process */
+        Factory *f = 0;
+        Device *d = 0;
+        assert(DirectInput8Create(0, 0x800, wide ? &iidW : &iidA, (void **)&f, 0) == OK);
+        assert(f->v->CreateDevice(f, &virtualGuid, (void **)&d, 0) == OK);
+        expect_identity(f, d, 0xc266046d, g923, 0); /* no app yet */
+        input(3, 32768, 65535, 65535, 65535, 0, 8);
+        put32(SHM_IN + 40, 0xc24f046d);
+        expect_identity(f, d, 0xc24f046d, g29, 1); /* refresh same device */
+        put32(SHM_IN + 4, 0);
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* unplug retains identity */
+        input(3, 32768, 65535, 65535, 65535, 0, 8);
+        expect_identity(f, d, 0xc24f046d, g29, 1); /* reconnect */
+        put32(SHM_IN + 40, 0xc266046d);
+        put32(SHM_IN, get32(SHM_IN) | 1);
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* torn model change */
+        put32(SHM_IN, get32(SHM_IN) + 1);
+        put32(4, SHM_VERSION + 1);
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* incompatible protocol */
+        put32(4, SHM_VERSION);
+        nowMs += INPUT_STALE_MS + 1;
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* stale change ignored */
+        put64(SHM_IN + 8, nowMs + 2001);
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* future heartbeat */
+        input(3, 70000, 65535, 65535, 65535, 0, 8);
+        expect_identity(f, d, 0xc24f046d, g29, 0); /* invalid input */
+        input(3, 32768, 65535, 65535, 65535, 0, 8);
+        expect_identity(f, d, 0xc266046d, g923, 1); /* different supported model */
+        put32(SHM_IN + 40, 0xc24f046d);
+        expect_identity(f, d, 0xc24f046d, g29, 1);
+        put32(SHM_IN + 4, 1); /* old writer leaves G29 bytes untouched */
+        expect_identity(f, d, 0xc266046d, g923, 1);
+        put32(SHM_IN + 4, 3);
+        const U32 unknown[] = {0, 0xc26d046d, 0xc26e046d, 0xc262046d, 0xc260046d, 0xc24f1234};
+        for (U32 i = 0; i < sizeof(unknown) / sizeof(*unknown); i++) {
+            put32(SHM_IN + 40, unknown[i]);
+            expect_identity(f, d, 0xc266046d, g923, 1);
+        }
+        assert(d->v->Release(d) == 0);
+        assert(f->v->Release(f) == 0);
+    }
+    zero(test_shm, sizeof(test_shm));
+    identityVidPid = 0xc266046d;
+    puts("PASS identity: ANSI/Unicode metadata, properties, stable GUIDs, v2 compatibility, reconnects");
+}
+
 int main(void) {
+    test_identity();
     COM *factory = 0, *device = 0, *constant = 0, *damper = 0;
     assert(DirectInput8Create(0, 0x800, &iidW, (void **)&factory, 0) == OK);
     assert(CALL(factory, 3, HR (*)(PTR, const GUID *, void **, PTR), &virtualGuid, (void **)&device, 0) == OK);

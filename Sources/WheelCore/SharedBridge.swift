@@ -51,8 +51,15 @@ public struct BridgeForceState: Sendable {
     public init() {}
 }
 
+/// Only the USB identities already accepted by the native scanner.
+public enum BridgeWheelModel: UInt32, Sendable, CaseIterable {
+    case g29 = 0xc24f, g923 = 0xc266
+    public var vidPid: UInt32 { rawValue << 16 | 0x046d }
+}
+
 public struct BridgeInput: Sendable, Equatable {
     public var connected = false
+    public var wheelModel: BridgeWheelModel? = nil
     public var steering: UInt32 = 32768
     public var throttle: UInt32 = 65535
     public var brake: UInt32 = 65535
@@ -99,7 +106,7 @@ public final class SharedBridge: @unchecked Sendable {
         inputSequence |= 1 // odd: write in progress
         cfb_store32_release(block, inputSequence)
         cfb_fence()
-        cfb_store32_relaxed(block + 4, value.connected ? 1 : 0)
+        cfb_store32_relaxed(block + 4, value.connected ? 3 : 0)
         cfb_store64_relaxed(block + 8, unixMilliseconds)
         cfb_store32_relaxed(block + 16, min(value.steering, 65535))
         cfb_store32_relaxed(block + 20, min(value.throttle, 65535))
@@ -107,6 +114,9 @@ public final class SharedBridge: @unchecked Sendable {
         cfb_store32_relaxed(block + 28, min(value.clutch, 65535))
         cfb_store32_relaxed(block + 32, value.buttons & 0x01ff_ffff)
         cfb_store32_relaxed(block + 36, min(value.hat, 8))
+        // Connected bit 1 marks this extension, so a downgraded writer's 0/1
+        // cannot accidentally reuse identity bytes left in the persistent file.
+        cfb_store32_relaxed(block + 40, value.wheelModel?.vidPid ?? 0)
         cfb_fence()
         inputSequence &+= 1 // even: consistent
         cfb_store32_release(block, inputSequence)

@@ -54,35 +54,52 @@ static void nameW(U16 *out, const char *in) {
         out[n++] = (U16)*in++;
     out[n] = 0;
 }
-/* Same product name and VID/PID GUID as the Logitech driver exposes, so games
- * that ship G923 presets (ACC, AMS2, rF2, ...) recognise the virtual wheel. */
-#define PRODUCT_NAME "G923 Racing Wheel for PlayStation and PC"
+/* Keep the virtual instance/FF GUID stable for existing bindings. Only the
+ * product identity changes. Retain the last good model through disconnects;
+ * fresh legacy/unknown input deliberately restores the historical fallback. */
+static U32 identityVidPid = 0xc266046d;
+static U32 current_identity(void) {
+    Snapshot s;
+    if (read_snapshot(&s)) {
+        U32 id = s.vidPid == 0xc24f046d ? s.vidPid : 0xc266046d;
+        __atomic_store_n(&identityVidPid, id, __ATOMIC_RELEASE);
+        return id;
+    }
+    return __atomic_load_n(&identityVidPid, __ATOMIC_ACQUIRE);
+}
+static const char *identity_name(U32 id) {
+    return id == 0xc24f046d ? "G29 Driving Force Racing Wheel" : "G923 Racing Wheel for PlayStation and PC";
+}
 #define DEVICE_TYPE (0x10000u | 0x400u | 0x16u) /* HID, driving, three pedals */
 static void instance_info(void *out, int wide) {
+    U32 id = current_identity();
+    GUID product = productGuid;
+    product.a = id;
+    const char *name = identity_name(id);
     if (wide) {
         InstanceW *p = out;
         zero(p, sizeof(*p));
         p->size = sizeof(*p);
         p->instance = virtualGuid;
-        p->product = productGuid;
+        p->product = product;
         p->type = DEVICE_TYPE;
         p->ff = virtualGuid;
         p->usagePage = 1;
         p->usage = 4;
-        nameW(p->name, PRODUCT_NAME);
-        nameW(p->productName, PRODUCT_NAME);
+        nameW(p->name, name);
+        nameW(p->productName, name);
     } else {
         InstanceA *p = out;
         zero(p, sizeof(*p));
         p->size = sizeof(*p);
         p->instance = virtualGuid;
-        p->product = productGuid;
+        p->product = product;
         p->type = DEVICE_TYPE;
         p->ff = virtualGuid;
         p->usagePage = 1;
         p->usage = 4;
-        nameA(p->name, PRODUCT_NAME);
-        nameA(p->productName, PRODUCT_NAME);
+        nameA(p->name, name);
+        nameA(p->productName, name);
     }
 }
 typedef struct Device Device;
@@ -339,7 +356,7 @@ static HR property(Device *d, const GUID *g, Property *p, int set) {
     if ((id == 13 || id == 14) && !set) { /* instance / product name, DIPROPSTRING */
         if (!p || p->headerSize != 16 || p->size != 16 + 520)
             return INVALID;
-        nameW((U16 *)((unsigned char *)p + 16), PRODUCT_NAME);
+        nameW((U16 *)((unsigned char *)p + 16), identity_name(current_identity()));
         return OK;
     }
     if (!valid_property(p, sizeof(DwordProperty)))
@@ -401,7 +418,7 @@ static HR property(Device *d, const GUID *g, Property *p, int set) {
         return OK;
     }
     if (!set && (id == 3 || id == 8 || id == 15 || id == 24)) {
-        r->value = id == 3 ? 1 : id == 24 ? 0xc266046d : 0;
+        r->value = id == 3 ? 1 : id == 24 ? current_identity() : 0;
         return OK;
     }
     return UNSUPPORTED;
@@ -588,7 +605,7 @@ static HR state(Device *d, U32 size, PTR out) {
         return NOTINITIALIZED;
     if (size != d->formatSize)
         return INVALID;
-    Snapshot neutral = {{32768, 65535, 65535, 65535}, 0, 8, 0};
+    Snapshot neutral = {.axis = {32768, 65535, 65535, 65535}, .hat = 8};
     U32 data[30];
     values(d, &neutral, data);
     write_state(d, size, out, data);

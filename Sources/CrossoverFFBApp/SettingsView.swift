@@ -228,7 +228,7 @@ struct LibraryPage: View {
                     ForEach(model.games) { game in GameCard(game: game) }
                 }
             }
-            Label("After installing, choose “G923 Racing Wheel for PlayStation and PC” in the game's controls and calibrate it there.", systemImage: "info.circle")
+            Label("After installing, choose your G29 or G923 wheel in the game's controls and calibrate it there.", systemImage: "info.circle")
                 .font(.caption).foregroundStyle(.secondary)
                 .padding(.top, 4)
         }
@@ -518,7 +518,7 @@ struct InputsPage: View {
                 }
                 .padding(.vertical, 12)
             }
-            Text("Games see a “G923 Racing Wheel for PlayStation and PC”: X steering, Y accelerator, Rz brake, Slider clutch. Calibrate and map pedals in each game's controls.")
+            Text("Games see the connected G29 or G923: X steering, Y accelerator, Rz brake, Slider clutch. Calibrate and map pedals in each game's controls.")
                 .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 6)
         }
     }

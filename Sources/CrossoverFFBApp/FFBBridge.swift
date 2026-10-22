@@ -148,6 +148,8 @@ final class FFBBridge: @unchecked Sendable {
         IOHIDDeviceScheduleWithRunLoop(candidate, CFRunLoopGetCurrent(), CFRunLoopMode.defaultMode.rawValue)
         input = BridgeInput()
         input.connected = true
+        input.wheelModel = BridgeWheelModel(rawValue:
+            (IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? NSNumber)?.uint32Value ?? 0)
         // Seed with current positions; HID only reports changes afterwards.
         for element in IOHIDDeviceCopyMatchingElements(candidate, nil, 0) as? [IOHIDElement] ?? [] {
             let type = IOHIDElementGetType(element)
