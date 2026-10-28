@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/menu.png" width="352" alt="crossover-ffb menu bar dropdown">
-</p>
-
 <h1 align="center">crossover-ffb</h1>
 
 <p align="center">
