@@ -29,6 +29,27 @@ final class WheelPresentationTests: XCTestCase {
         XCTAssertFalse(state.showsTrueForce)
     }
 
+    func testUnsupportedWheelIsNamedButNeverConnected() {
+        var state = WheelPresentation(running: true, connected: false, model: nil, trueForceInterfaceAvailable: true, age: 0, detected: .rs50)
+        XCTAssertEqual(state.unsupportedModel, .rs50)
+        XCTAssertEqual(state.title, "Logitech RS50")
+        XCTAssertFalse(state.isConnected)
+        XCTAssertFalse(state.showsTrueForce)
+        XCTAssertNil(state.visibleModel)
+        state.detected = .ambiguousC272
+        XCTAssertEqual(state.title, "Logitech RS50 or G PRO")
+        state.detected = .g923PS // supported models are never shown as unsupported
+        XCTAssertNil(state.unsupportedModel)
+        state.detected = .gProPS
+        state.age = 1.01
+        XCTAssertNil(state.unsupportedModel)
+        state.age = 0; state.running = false
+        XCTAssertNil(state.unsupportedModel)
+        state.running = true; state.connected = true; state.model = .g29
+        XCTAssertNil(state.unsupportedModel) // a driven wheel takes precedence
+        XCTAssertEqual(state.title, "Logitech G29")
+    }
+
     func testRimAngleKeepsCentreAndRange() {
         XCTAssertEqual(WheelPresentation.angle(steering: 0, range: 900), -450)
         XCTAssertEqual(WheelPresentation.angle(steering: 65535, range: 900), 450)

@@ -17,12 +17,14 @@ final class AppModel: ObservableObject {
     static var current: AppModel? { shared }
     let bridge: FFBBridge
     let isPreview: Bool
+    /// Preview labels are hidden when simulating a wheel in the normal app chrome.
+    var showsPreviewChrome: Bool { isPreview && AppRuntime.simulatedWheel == nil }
     private let defaults: UserDefaults
     @Published private var presentationTime = ProcessInfo.processInfo.systemUptime
     var presentation: WheelPresentation {
         WheelPresentation(running: status.running, connected: status.wheelConnected,
                           model: status.wheelModel, trueForceInterfaceAvailable: status.trueForceAvailable,
-                          age: isPreview ? 0 : presentationTime - status.updatedAt)
+                          age: isPreview ? 0 : presentationTime - status.updatedAt, detected: status.detectedModel)
     }
     var showsTrueForce: Bool { presentation.showsTrueForce }
     private var timer: Timer?
@@ -75,7 +77,7 @@ final class AppModel: ObservableObject {
     struct Notice: Identifiable { let id = UUID(); var title: String; var message: String }
     enum SettingsTab: Hashable { case overview, games, wheel, forceFeedback, trueForce, inputs, general }
 
-    init(preview: Bool = CommandLine.arguments.contains("--snapshot") || AppRuntime.isDemo) {
+    init(preview: Bool = CommandLine.arguments.contains("--snapshot") || AppRuntime.isDemo || AppRuntime.simulatedWheel != nil) {
         isPreview = preview
         bridge = FFBBridge(hardwareEnabled: !preview)
         defaults = preview ? UserDefaults(suiteName: "crossover-ffb-preview-\(UUID().uuidString)")! : .standard
@@ -193,9 +195,9 @@ final class AppModel: ObservableObject {
         if settingsWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 780),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            window.title = isPreview ? "crossover-ffb Demo — No Hardware" : "crossover-ffb"
+            window.title = showsPreviewChrome ? "crossover-ffb Demo — No Hardware" : "crossover-ffb"
             // Sidebar runs the full height under a transparent title bar, as in System Settings.
-            window.titleVisibility = isPreview ? .visible : .hidden
+            window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.toolbarStyle = .unified
             window.isReleasedWhenClosed = false
@@ -222,6 +224,7 @@ final class AppModel: ObservableObject {
         status.effectsPlaying = wheel == nil ? 0 : 3
         status.output = wheel == nil ? 0 : 0.24
         status.rawSteering = wheel == nil ? 32768 : 35025
+        status.input.steering = status.rawSteering
         status.input.connected = wheel != nil
         status.input.wheelModel = wheel
         status.input.throttle = wheel == nil ? 65535 : 27525
@@ -234,6 +237,39 @@ final class AppModel: ObservableObject {
         status.gameProcessID = wheel == nil ? 0 : 4242
         self.status = status
         if !showsTrueForce && settingsTab == .trueForce { settingsTab = .overview }
+    }
+
+    /// A recognised wheel the bridge does not drive: no input, output or TrueForce.
+    func setPreviewUnsupported(_ detected: WheelModel) {
+        setPreviewWheel(nil)
+        status.detectedModel = detected
+        status.message = "\(detected.displayName) isn't supported yet."
+    }
+
+    enum PreviewFixture: String, CaseIterable {
+        case g923, g29, g923Xbox, rs50, gProPS, c272, disconnected
+        var label: String {
+            switch self {
+            case .g923: "G923 (PlayStation / PC)"
+            case .g29: "G29"
+            case .g923Xbox: "G923 for Xbox"
+            case .rs50: "RS50"
+            case .gProPS: "G PRO (PlayStation / PC)"
+            case .c272: "RS50 or G PRO (c272)"
+            case .disconnected: "Disconnected"
+            }
+        }
+    }
+    func setPreview(_ fixture: PreviewFixture) {
+        switch fixture {
+        case .g923: setPreviewWheel(.g923)
+        case .g29: setPreviewWheel(.g29)
+        case .g923Xbox: setPreviewUnsupported(.g923XboxPC)
+        case .rs50: setPreviewUnsupported(.rs50)
+        case .gProPS: setPreviewUnsupported(.gProPS)
+        case .c272: setPreviewUnsupported(.ambiguousC272)
+        case .disconnected: setPreviewWheel(nil)
+        }
     }
 
     // MARK: games

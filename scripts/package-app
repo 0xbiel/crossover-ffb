@@ -7,9 +7,9 @@ export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
 version=$(tr -d '[:space:]' < VERSION)
 build_number=${BUILD_NUMBER:-1}
 scripts/build-bridge
-swift build -c release --product crossover-ffb --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox
-swift build -c release --product CrossoverFFBApp --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox
-binary_dir="$(swift build -c release --show-bin-path --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox)"
+swift build -c release --product crossover-ffb --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox --build-system native
+swift build -c release --product CrossoverFFBApp --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox --build-system native
+binary_dir="$(swift build -c release --show-bin-path --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox --build-system native)"
 app_dir="$PWD/dist/crossover-ffb.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CrossoverFFBApp" "$app_dir/Contents/MacOS/CrossoverFFBApp"

@@ -17,23 +17,23 @@ struct SettingsView: View {
         HStack(spacing: 0) {
             Sidebar().frame(width: 224)
             VStack(spacing: 0) {
-                HStack {
-                    Text("Workspace").foregroundStyle(.secondary)
-                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(.tertiary)
-                    Text(model.presentation.title)
+                HStack(spacing: 8) {
+                    Circle().fill(model.presentation.statusColor).frame(width: 6, height: 6)
+                    Text(model.presentation.title).fontWeight(.medium)
+                    if model.presentation.unsupportedModel != nil { Text("Not supported yet").foregroundStyle(.orange) }
                     Spacer()
-                    if model.isPreview {
+                    if model.showsPreviewChrome {
                         Text("Preview · no hardware").foregroundStyle(.secondary)
                         if AppRuntime.isDemo {
                             Menu("Fixture") {
-                                Button("G923") { model.setPreviewWheel(.g923) }
-                                Button("G29") { model.setPreviewWheel(.g29) }
-                                Button("Disconnected") { model.setPreviewWheel(nil) }
+                                ForEach(AppModel.PreviewFixture.allCases, id: \.self) { fixture in
+                                    Button(fixture.label) { model.setPreview(fixture) }
+                                }
                             }
+                            .menuStyle(.borderlessButton).fixedSize()
                         }
                     }
-                    Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)
-                }.font(.system(size: 12)).padding(.horizontal, 24).frame(height: 52)
+                }.font(.system(size: 12)).padding(.horizontal, 20).frame(height: 38)
                 Divider().opacity(0.5)
                 Group {
                     switch model.settingsTab {
@@ -53,6 +53,8 @@ struct SettingsView: View {
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.separator.opacity(0.25)))
             .padding(8)
         }
+        // Run under the transparent title bar; the traffic lights sit over the sidebar.
+        .ignoresSafeArea(.container, edges: .top)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(.gray)
         .frame(minWidth: 920, minHeight: 640)
@@ -72,7 +74,7 @@ private struct Sidebar: View {
                 Image(systemName: "steeringwheel").font(.title3)
                 Text("crossover-ffb").font(.system(size: 14, weight: .semibold))
                 Spacer()
-            }.padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 26)
+            }.padding(.horizontal, 20).padding(.top, 46).padding(.bottom, 8)
             VStack(alignment: .leading, spacing: 4) {
                 section("WORKSPACE")
                 item(.overview, "Overview", "square.grid.2x2")
@@ -89,10 +91,10 @@ private struct Sidebar: View {
             VStack(alignment: .leading, spacing: 10) {
                 Divider()
                 HStack(spacing: 8) {
-                    Circle().fill(model.presentation.isConnected ? Color.mint : Color.secondary).frame(width: 6, height: 6)
+                    Circle().fill(model.presentation.statusColor).frame(width: 6, height: 6)
                     Text(model.presentation.title).font(.system(size: 12, weight: .medium))
                 }
-                Text(model.presentation.isConnected ? "USB · Ready to drive" : "Connect a G29 or G923 to begin")
+                Text(model.presentation.isConnected ? "USB · Ready to drive" : model.presentation.unsupportedModel != nil ? "Detected · not supported yet" : "Connect a G29 or G923 to begin")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                 Toggle("Wheel bridge", isOn: Binding(get: { model.running }, set: { _ in model.toggleRunning() }))
                     .toggleStyle(.switch).controlSize(.mini).font(.system(size: 11))
@@ -227,7 +229,7 @@ struct LibraryPage: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        Page(title: "Library", subtitle: "Install the wheel bridge into the Windows games you play through NotProton, Steam or CrossOver, on any disk. Quit a game before installing or uninstalling it.") {
+        Page(title: "Game library", subtitle: "Install the wheel bridge into the Windows games you play through NotProton, Steam or CrossOver, on any disk. Quit a game before installing or uninstalling it.") {
             GlassGroup {
                 HStack(spacing: 8) {
                     Button { model.rescan() } label: {
@@ -444,7 +446,7 @@ struct ForceFeedbackPage: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         let s = model.status
-        Page(title: "Force Feedback", subtitle: "How strongly the game's forces reach your wheel.") {
+        Page(title: "Force feedback", subtitle: "How strongly the game's forces reach your wheel.") {
             Card {
                 Row(symbol: "power", color: s.running ? .green : .gray, title: "Wheel bridge", subtitle: s.message) {
                     Toggle("Wheel bridge", isOn: Binding(get: { s.running }, set: { _ in model.toggleRunning() })).toggleStyle(.switch).labelsHidden()
@@ -512,7 +514,7 @@ struct InputsPage: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         let s = model.status
-        Page(title: "Wheel Input", subtitle: "What games see from your wheel and pedals, live.") {
+        Page(title: "Input monitor", subtitle: "What games see from your wheel and pedals, live.") {
             Card(title: "Axes") {
                 axis("Steering", "steeringwheel", .blue, s.input.steering, centred: true)
                 axis("Accelerator", "arrow.up.circle.fill", .green, 65535 - s.input.throttle)
@@ -554,9 +556,9 @@ struct InputsPage: View {
                         Capsule().fill(Color.primary.opacity(0.08))
                         if centred {
                             let w = abs(f - 0.5) * geo.size.width
-                            Capsule().fill(color.gradient).frame(width: max(6, w)).offset(x: f < 0.5 ? geo.size.width / 2 - w : geo.size.width / 2)
+                            Capsule().fill(color.gradient).frame(width: w > 0.5 ? max(6, w) : 0).offset(x: f < 0.5 ? geo.size.width / 2 - w : geo.size.width / 2)
                         } else {
-                            Capsule().fill(color.gradient).frame(width: max(6, f * geo.size.width))
+                            Capsule().fill(color.gradient).frame(width: f > 0.005 ? max(6, f * geo.size.width) : 0)
                         }
                     }
                 }
@@ -592,7 +594,7 @@ private struct DPad: View {
 struct GeneralPage: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
-        Page(title: "General", subtitle: "Startup, menu bar and permissions.") {
+        Page(title: "Settings", subtitle: "Startup, menu bar and permissions.") {
             Card(footer: "When the menu bar icon is hidden, open crossover-ffb again from Applications or Spotlight to get to this window.") {
                 Row(symbol: "menubar.rectangle", color: .blue, title: "Show in menu bar") {
                     Toggle("Show in menu bar", isOn: $model.showInMenuBar).toggleStyle(.switch).labelsHidden()

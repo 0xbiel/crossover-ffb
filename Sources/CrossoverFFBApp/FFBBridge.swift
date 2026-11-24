@@ -9,6 +9,8 @@ final class FFBBridge: @unchecked Sendable {
         var running = false
         var wheelConnected = false
         var wheelModel: BridgeWheelModel?
+        /// Recognised but not driven; only preview fixtures set this until passive discovery is wired in.
+        var detectedModel: WheelModel?
         var trueForceAvailable = false
         var updatedAt: TimeInterval = 0
         var gameProcessID: UInt32 = 0

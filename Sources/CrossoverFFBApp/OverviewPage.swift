@@ -1,28 +1,43 @@
 import SwiftUI
 import WheelCore
 
+extension WheelPresentation {
+    var statusColor: Color { isConnected ? .mint : unsupportedModel != nil ? .orange : .secondary }
+    /// Short status for compact surfaces.
+    var statusLabel: String { isConnected ? "Connected" : unsupportedModel != nil ? "Not supported" : "Offline" }
+    /// Why the dial is empty; nil while a supported wheel is connected.
+    var emptyMessage: (title: String, detail: String)? {
+        if isConnected { return nil }
+        if unsupportedModel != nil {
+            return ("This wheel isn't supported yet",
+                    "crossover-ffb found it but won't send it anything, so input and force feedback stay off. Supported: Logitech G29 and G923 for PlayStation / PC.")
+        }
+        return ("Connect your wheel over USB", "Logitech G29 and G923 for PlayStation / PC are supported.")
+    }
+}
+
 struct OverviewPage: View {
     @EnvironmentObject var model: AppModel
     private var connected: Bool { model.presentation.isConnected }
     var body: some View {
-        Page(title: "Your driving setup", subtitle: connected ? "Everything you need for the next session." : "Connect your wheel over USB. Your settings will be here when you return.") {
+        Page(title: "Your driving setup", subtitle: connected ? "Everything you need for the next session." : model.presentation.unsupportedModel != nil ? "Your settings are kept for a supported wheel." : "Connect your wheel over USB. Your settings will be here when you return.") {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.presentation.title).font(.headline)
-                            Text(connected ? "PlayStation / PC · USB" : "G29 & G923 supported").font(.caption).foregroundStyle(.secondary)
+                            Text(connected ? "PlayStation / PC · USB" : model.presentation.unsupportedModel != nil ? "Detected over USB" : "G29 & G923 supported").font(.caption).foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text(connected ? "CONNECTED" : "OFFLINE").font(.system(size: 9, weight: .semibold)).tracking(0.8)
-                            .foregroundStyle(connected ? Color.mint : .secondary)
+                        Text(model.presentation.statusLabel.uppercased()).font(.system(size: 9, weight: .semibold)).tracking(0.8)
+                            .foregroundStyle(model.presentation.statusColor)
                     }
                     RotationDial(range: model.wheel.range, steering: model.status.rawSteering,
-                                 connected: connected, model: model.presentation.visibleModel)
+                                 presentation: model.presentation)
                     Button { model.settingsTab = .wheel } label: {
                         HStack { Text("Steering & pedal settings"); Spacer(); Image(systemName: "arrow.up.right") }
                     }.buttonStyle(.plain).font(.caption).foregroundStyle(.secondary)
-                }.padding(20).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+                }.padding(20).frame(maxHeight: .infinity, alignment: .top).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 19) {
                     Text("Live inputs").font(.headline)
                     pedal("Accelerator", model.status.input.throttle, .mint)
@@ -34,10 +49,11 @@ struct OverviewPage: View {
                         Spacer()
                         Button { model.settingsTab = .inputs } label: { Image(systemName: "arrow.up.right") }.buttonStyle(.plain)
                     }
-                    Text(connected ? "Input is forwarded to your game in real time." : "Waiting for wheel input.")
+                    Text(connected ? "Input is forwarded to your game in real time." : model.presentation.unsupportedModel != nil ? "Input from this wheel isn't read." : "Waiting for wheel input.")
                         .font(.caption).foregroundStyle(.tertiary).fixedSize(horizontal: false, vertical: true)
-                }.padding(20).frame(width: 225).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
-            }
+                    Spacer(minLength: 0)
+                }.padding(20).frame(width: 225).frame(maxHeight: .infinity, alignment: .top).background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+            }.fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {

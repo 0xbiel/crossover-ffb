@@ -5,50 +5,48 @@ import WheelCore
 enum AppRuntime {
     static var isDemo: Bool { isDemo(arguments: CommandLine.arguments, bundleFlag: Bundle.main.object(forInfoDictionaryKey: "FFBHardwareDisabledDemo") as? Bool) }
     static func isDemo(arguments: [String], bundleFlag: Bool?) -> Bool { arguments.contains("--demo") || bundleFlag == true }
+    /// `--simulate-wheel <fixture>`: the normal app chrome over a fixture, still hardware-disabled.
+    static var simulatedWheel: AppModel.PreviewFixture? {
+        guard !isDemo, let i = CommandLine.arguments.firstIndex(of: "--simulate-wheel"), i + 1 < CommandLine.arguments.count else { return nil }
+        return AppModel.PreviewFixture(rawValue: CommandLine.arguments[i + 1])
+    }
 }
 
-@main
-struct CrossoverFFBApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    // The scene must not observe the model: it publishes live status ~15×/s, and every scene
-    // invalidation makes SwiftUI rebuild the menu bar extra and main menu. Only the label and
-    // the dropdown's own views observe it.
-    private let model = AppModel.shared
-    @AppStorage("showInMenuBar") private var showInMenuBar = true
-    init() {
+@main @MainActor
+enum CrossoverFFBApp {
+    private static let delegate = AppDelegate()
+    static func main() {
+        let app = NSApplication.shared
         // Menu-bar only: no Dock icon or app menu (Info.plist also sets LSUIElement).
-        NSApplication.shared.setActivationPolicy(.accessory)
+        app.setActivationPolicy(.accessory)
         if let i = CommandLine.arguments.firstIndex(of: "--snapshot"), i + 1 < CommandLine.arguments.count {
             Snapshot.render(to: URL(fileURLWithPath: CommandLine.arguments[i + 1]))
             exit(0)
         }
-    }
-    var body: some Scene {
-        MenuBarExtra(isInserted: AppRuntime.isDemo ? .constant(true) : $showInMenuBar) {
-            MenuView().environmentObject(model)
-        } label: {
-            if AppRuntime.isDemo { Text("FFB Demo") } else { MenuBarLabel(icon: model.icon) }
-        }
-        .menuBarExtraStyle(.window)
-    }
-}
-
-struct MenuBarLabel: View {
-    @ObservedObject var icon: AppModel.IconState
-    var body: some View {
-        Image(nsImage: MenuIcon.image(active: icon.gameActive, running: icon.running))
+        app.delegate = delegate
+        app.run()
     }
 }
 
 /// Opening the app again (Finder, Spotlight, Launchpad) shows Settings, so it stays reachable
 /// when someone hides the menu bar icon.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var menuBar: MenuBarController?
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard AppRuntime.isDemo else { return }
         MainActor.assumeIsolated {
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-            AppModel.shared.setPreviewWheel(.g923)
-            AppModel.shared.showSettings(.overview)
+            let model = AppModel.shared
+            menuBar = MenuBarController(model: model)
+            if let fixture = AppRuntime.simulatedWheel {
+                model.setPreview(fixture)
+            } else if AppRuntime.isDemo {
+                NSApp.appearance = NSAppearance(named: .darkAqua)
+                model.setPreviewWheel(.g923)
+            } else { return }
+            if CommandLine.arguments.contains("--open-menu") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { self.menuBar?.open() } }
+            } else {
+                model.showSettings(.overview)
+            }
         }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -95,15 +93,16 @@ enum Snapshot {
             do { try png.write(to: dir.appendingPathComponent(name + ".png")) }
             catch { fatalError("Cannot save \(name): \(error)") }
         }
-        for (name, wheel) in [("g923", BridgeWheelModel.g923 as BridgeWheelModel?), ("g29", .g29), ("disconnected", nil)] {
-            model.setPreviewWheel(wheel)
+        for fixture in AppModel.PreviewFixture.allCases {
+            let name = fixture.rawValue
+            model.setPreview(fixture)
             model.settingsTab = .overview
-            save(MenuView(), "menu-" + name, NSSize(width: 360, height: wheel == .g923 ? 570 : 540))
+            save(MenuView(), "menu-" + name, NSSize(width: 360, height: fixture == .g923 ? 570 : 540))
             save(SettingsView(), "window-" + name, NSSize(width: 1100, height: 780))
             if CommandLine.arguments.contains("--snapshot-all") {
                 for (tab, page) in [(AppModel.SettingsTab.games, "games"), (.wheel, "wheel"), (.forceFeedback, "ffb"), (.trueForce, "trueforce"), (.inputs, "inputs"), (.general, "general")] {
                     model.settingsTab = tab
-                    save(SettingsView(), "settings-" + name + "-" + page, NSSize(width: 1100, height: 900))
+                    save(SettingsView(), "settings-" + name + "-" + page, NSSize(width: 1100, height: 1500))
                 }
             }
         }

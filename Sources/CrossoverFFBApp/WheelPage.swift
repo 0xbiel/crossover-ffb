@@ -9,12 +9,12 @@ struct WheelPage: View {
     private static let presets = [180, 270, 360, 540, 720, 900]
 
     var body: some View {
-        Page(title: "Steering Wheel", subtitle: "Operating range, sensitivity and centering, as in Logitech G HUB. Changes apply right away, also while you drive.") {
+        Page(title: "Steering & pedals", subtitle: "Operating range, sensitivity and centering, as in Logitech G HUB. Changes apply right away, also while you drive.") {
             Button("Restore Defaults") { model.wheel = WheelSettings() }
                 .glassButton()
                 .disabled(model.wheel == WheelSettings())
         } content: {
-            RotationDial(range: model.wheel.range, steering: model.status.rawSteering, connected: model.presentation.isConnected, model: model.presentation.visibleModel)
+            RotationDial(range: model.wheel.range, steering: model.status.rawSteering, presentation: model.presentation)
             Card(title: "Steering") {
                 Row(symbol: "arrow.left.and.right.circle.fill", color: .blue, title: "Operating range",
                     subtitle: "Degrees lock to lock. Match the car: about 360° for F1 and GT3, 540° for road cars, 900° for trucks and rally.", divider: false) {
@@ -62,7 +62,7 @@ struct WheelPage: View {
                 .opacity(model.wheel.centeringSpring ? 1 : 0.5)
             }
             Card(title: "Force feedback") {
-                Row(symbol: "bolt.circle.fill", color: .orange, title: "Torque", subtitle: "Overall force feedback strength") {
+                Row(symbol: "bolt.circle.fill", color: .orange, title: "Torque", subtitle: "Overall force feedback strength", divider: model.showsTrueForce) {
                     PercentSlider(value: $model.strength)
                 }
                 if model.showsTrueForce {
@@ -109,12 +109,39 @@ struct WheelPage: View {
 struct RotationDial: View {
     let range: Int
     let steering: UInt32
-    let connected: Bool
-    let model: BridgeWheelModel?
+    let presentation: WheelPresentation
+    private var connected: Bool { presentation.isConnected }
+    private var model: BridgeWheelModel? { presentation.visibleModel }
 
     private var angle: Double { (Double(steering) / 32767.5 - 1) * Double(range) / 2 }
 
     var body: some View {
+        Group {
+            if let empty = presentation.emptyMessage {
+                VStack(spacing: 10) {
+                    Image(systemName: presentation.unsupportedModel != nil ? "exclamationmark.triangle" : "cable.connector")
+                        .font(.system(size: 26, weight: .light))
+                        .foregroundStyle(presentation.unsupportedModel != nil ? Color.orange : .secondary)
+                    Text(empty.title).font(.headline)
+                    Text(empty.detail).font(.callout).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center).frame(maxWidth: 380)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 220)
+            } else {
+                dial
+            }
+        }
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(.quaternary.opacity(0.45)))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Color.primary.opacity(0.06)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.emptyMessage?.title ?? "Wheel rotation")
+        .accessibilityValue(connected ? "\(Int(angle.rounded())) degrees of \(range)" : presentation.emptyMessage?.detail ?? "")
+    }
+
+    private var dial: some View {
         VStack(spacing: 6) {
             Text(connected ? "\(Int(angle.rounded()))°" : "–")
                 .font(.system(size: 34, weight: .semibold, design: .rounded)).monospacedDigit()
@@ -159,13 +186,6 @@ struct RotationDial: View {
                 .font(.caption.weight(.semibold)).tracking(0.5)
                 .foregroundStyle(Color.accentColor)
         }
-        .padding(.vertical, 18)
-        .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).fill(.quaternary.opacity(0.45)))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Color.primary.opacity(0.06)))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Wheel rotation")
-        .accessibilityValue(connected ? "\(Int(angle.rounded())) degrees of \(range)" : "wheel not connected")
     }
 }
 
