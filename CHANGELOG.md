@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0
 
 - **G29 identity**: games now see a connected G29 as a G29 (product `c24f`), not as a G923.
   Assetto Corsa and other games that bind controls to the wheel's product may need the wheel
@@ -18,6 +18,8 @@
 - The bridge log (`crossover-ffb-observe.log`) now records which wheel each game was offered,
   tagged `cfb-bridge-v3`.
 - Groundwork for Logitech's native SDK and newer wheels, disabled and not hardware-tested.
+- **App icon and installer**: the app has its own icon, and the disk image opens to a styled
+  window with drag-to-Applications and first-launch instructions.
 
 ## 0.2.1
 
