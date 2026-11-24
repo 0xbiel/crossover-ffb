@@ -30,7 +30,17 @@ void test_free(void *p) {
     allocations--;
     free(p);
 }
-void test_log(const char *m, U32 v, const GUID *g) { (void)m, (void)v, (void)g; }
+typedef struct { const char *method; U32 value; GUID guid; int hasGuid; } LogLine;
+static LogLine logged[64];
+static U32 loggedCount;
+void test_log(const char *m, U32 v, const GUID *g) {
+    if (loggedCount < 64) logged[loggedCount++] = (LogLine){m, v, g ? *g : (GUID){0}, g != 0};
+}
+static const LogLine *last_logged(const char *method) {
+    for (U32 i = loggedCount; i-- > 0;)
+        if (strcmp(logged[i].method, method) == 0) return &logged[i];
+    return 0;
+}
 
 static void put32(U32 off, U32 v) { memcpy(test_shm + off, &v, 4); }
 static void put64(U32 off, U64 v) { memcpy(test_shm + off, &v, 8); }
@@ -246,8 +256,41 @@ static void test_physical_path(void) {
     puts("PASS physical path: ANSI/Unicode, real metadata, ambiguity, disconnect, malformed ABI, balanced release");
 }
 
+/* The system backend reports the physical G29 once; the bridge hides it and offers its own. */
+static HR mock_enum_physical_g29(Factory *f, U32 kind, PTR callback, PTR ctx, U32 flags) {
+    (void)f, (void)kind, (void)flags;
+    InstanceW info = {.size = sizeof(info), .product = {0xc24f046d, 0, 0, {0, 0, 0x50, 0x49, 0x44, 0x56, 0x49, 0x44}}};
+    ((int (*)(const void *, PTR))callback)(&info, ctx);
+    return OK;
+}
+static int count_offered(const InstanceW *info, PTR ctx) { (void)info; (*(int *)ctx)++; return 1; }
+static void test_enumeration_log(void) {
+    static const FactoryVT physicalFVT = {.EnumDevices = mock_enum_physical_g29};
+    Factory real = {.v = &physicalFVT, .wide = 1};
+    Factory f = {.real = &real, .wide = 1, .refs = 1};
+    input(3, 32768, 65535, 65535, 65535, 0, 8);
+    put32(SHM_IN + 40, 0xc24f046d);
+    loggedCount = 0; enumLoggedKey = ~0u;
+    int offered = 0;
+    assert(enumerate(&f, 4, (PTR)count_offered, &offered, 1) == OK);
+    assert(offered == 1);
+    const LogLine *virtualLine = last_logged("EnumDevices_virtual");
+    assert(virtualLine && virtualLine->value == 1 && virtualLine->hasGuid && virtualLine->guid.a == 0xc24f046d);
+    assert(last_logged("EnumDevices_kind")->value == 4 && last_logged("EnumDevices_flags")->value == 1);
+    assert(last_logged("EnumDevices_hiddenReal")->value == 1 && last_logged("EnumDevices_result")->value == OK);
+    U32 lines = loggedCount;
+    assert(enumerate(&f, 4, (PTR)count_offered, &offered, 1) == OK);
+    assert(loggedCount == lines); /* unchanged answers are rate-limited */
+    put32(SHM_IN + 4, 0); /* disconnected: attached-only enumeration offers nothing */
+    assert(enumerate(&f, 4, (PTR)count_offered, &offered, 1) == OK);
+    assert(last_logged("EnumDevices_virtual")->value == 0 && !last_logged("EnumDevices_virtual")->hasGuid);
+    zero(test_shm, sizeof(test_shm)); identityVidPid = 0xc266046d;
+    puts("PASS enumeration log: offered G29 identity, hidden physical wheel, rate limit, disconnect");
+}
+
 int main(void) {
     test_physical_path();
+    test_enumeration_log();
     /* Experimental products must remain visible to the real backend. */
     const U32 untouched[] = {0xc26d046d, 0xc26e046d, 0xc272046d, 0xc276046d, 0xc268046d};
     for (U32 i = 0; i < sizeof(untouched) / sizeof(*untouched); i++) {

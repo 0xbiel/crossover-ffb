@@ -1514,21 +1514,45 @@ static int hidden_product(const GUID *product) {
 }
 typedef struct {
     PTR cb, ctx;
+    U32 hidden;
 } EnumContext;
 static int enum_filter(const unsigned char *info, PTR c) {
     EnumContext *e = c;
-    if (hidden_product((const GUID *)(info + 20)))
+    if (hidden_product((const GUID *)(info + 20))) {
+        e->hidden++;
         return 1;
+    }
     return ((int (*)(const void *, PTR))e->cb)(info, e->ctx);
+}
+/* Games pick their wheel from enumeration alone, so record what each one was offered.
+ * Rate-limited like device diagnostics: a change, or at most every five seconds. */
+static U64 enumLoggedAt;
+static U32 enumLoggedKey = ~0u;
+static void enum_event(U32 kind, U32 flags, U32 offered, U32 hidden, HR result) {
+    U32 key = kind ^ (flags << 8) ^ (offered << 16) ^ (hidden << 24) ^ (U32)result;
+    U64 now = ticks();
+    if (key == enumLoggedKey && now - enumLoggedAt < 5000)
+        return;
+    enumLoggedKey = key;
+    enumLoggedAt = now;
+    GUID product = productGuid;
+    product.a = current_identity();
+    event("EnumDevices_kind", kind, 0);
+    event("EnumDevices_flags", flags, 0);
+    event("EnumDevices_virtual", offered, offered ? &product : 0);
+    event("EnumDevices_hiddenReal", hidden, 0);
+    event("EnumDevices_result", (U32)result, 0);
 }
 static HR enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
     if (!cb)
         return INVALID;
     int more = 1;
+    U32 offered = 0;
     /* All devices, game controllers, or driving devices. */
     if (!kind || kind == 4 || (kind & 0xff) == 0x16) {
         Snapshot snapshot;
         if (!(flags & 1) || read_snapshot(&snapshot)) {
+            offered = 1;
             fa(f);
             if (f->wide) {
                 InstanceW info;
@@ -1542,11 +1566,10 @@ static HR enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
             fr(f);
         }
     }
-    if (more && f->real) {
-        EnumContext e = {cb, ctx};
-        return f->real->v->EnumDevices(f->real, kind, (PTR)enum_filter, &e, flags);
-    }
-    return OK;
+    EnumContext e = {cb, ctx, 0};
+    HR result = more && f->real ? f->real->v->EnumDevices(f->real, kind, (PTR)enum_filter, &e, flags) : OK;
+    enum_event(kind, flags, offered, e.hidden, result);
+    return result;
 }
 static HR status(Factory *f, const GUID *g) {
     if (!same(g, &virtualGuid))

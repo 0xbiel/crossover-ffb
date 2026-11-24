@@ -93,7 +93,7 @@ static void event(const char *method, U32 value, const GUID *guid) {
     }
     char b[512];
     U32 n = 0, written = 0;
-    n = text(b, n, "cfb-bridge-v2 pid=");
+    n = text(b, n, "cfb-bridge-v3 pid=");
     n = hex(b, n, GetCurrentProcessId(), 8);
     n = text(b, n, " ms=");
     n = hex(b, n, GetTickCount64(), 16);
