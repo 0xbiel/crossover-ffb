@@ -31,8 +31,10 @@ or G29, and its forces reach the real wheel on your Mac.
 
 ## What's new in 0.3.0
 
-- **G29 identity.** Games now see a connected G29 as a G29 instead of a G923, so G29 presets
-  and bindings can match. See [Bridge foundations](#bridge-foundations-in-030).
+- **Experimental G29 identity.** The new bridge, still a work in progress, presents a connected
+  G29 to games as a G29 instead of a G923, so G29 presets and bindings can match. It hasn't been
+  tested on a G29 yet. Reports are welcome in [#1](../../issues/1). See
+  [Bridge foundations](#bridge-foundations-in-030).
 - **New interface.** The menu is a single Liquid Glass surface with native sliders and
   switches. The dashboard has a slimmer header, clearer empty states, and page titles that
   match the sidebar.
@@ -49,7 +51,7 @@ bridge must both be 0.3.0 for the G29 identity.
 
 | | Status |
 |---|---|
-| **Wheels** | Logitech **G923** (PlayStation/PC, `046d:c266`): tested. Logitech **G29** (`046d:c24f`): supported, not yet confirmed on hardware. TrueForce is G923 only. |
+| **Wheels** | Logitech **G923** (PlayStation/PC, `046d:c266`): tested. Logitech **G29** (`046d:c24f`): supported but untested on hardware; its own identity in games is experimental. TrueForce is G923 only. |
 | **Not supported yet** | G923 for Xbox (`c26e`, `c26d`), RS50 (`c276`), G PRO (`c268`), and `c272`, which RS50 and G PRO share. Shown in the app, never driven. |
 | **macOS** | 13 Ventura or later on Apple Silicon. Liquid Glass on macOS 26 and later. |
 | **Runners** | Steam games through **NotProton**, **CrossOver** bottles (including Steam inside a bottle), any other Wine prefix via **Add Game** |
@@ -151,10 +153,10 @@ rpm and throttle, suspension and road texture, kerb rumble, tyre-slip judder and
 
 ## Bridge foundations in 0.3.0
 
-0.3.0 changes what the bridge tells games, and adds groundwork that stays switched off until
-it's proven on real hardware.
+0.3.0 starts a new bridge that's still in progress. It changes what the bridge tells games,
+and adds groundwork that stays switched off until it's proven on real hardware.
 
-**Wheel identity.** The app publishes the connected wheel's USB ID (`046d:c24f` G29,
+**Wheel identity (experimental, untested on a G29).** The app publishes the connected wheel's USB ID (`046d:c24f` G29,
 `046d:c266` G923) alongside the input, in a previously unused slot of the shared memory. The
 file layout and protocol version don't change. The DLL uses that one value for everything a
 game can ask: enumeration, `GetDeviceInfo`, the product and instance names, and

@@ -2,10 +2,12 @@
 
 ## 0.3.0
 
-- **G29 identity**: games now see a connected G29 as a G29 (product `c24f`), not as a G923.
-  Assetto Corsa and other games that bind controls to the wheel's product may need the wheel
-  selected again. Update the bridge in each game from the Library, since app and bridge must
-  both be 0.3.0.
+- **Experimental G29 identity**: the new bridge, still a work in progress, presents a connected
+  G29 to games as a G29 (product `c24f`) instead of a G923. It hasn't been tested on a G29 yet,
+  so please report how it works ([#1](https://github.com/0xbiel/crossover-ffb/issues/1)). Games
+  that bind controls to the wheel's product, such as Assetto Corsa set up in Content Manager,
+  may need the wheel selected again. Update the bridge in each game from the Library, since app
+  and bridge must both be 0.3.0.
 - **New menu bar menu**: one Liquid Glass surface with no panel behind it, native sliders and
   switches, and the bridge switch in the header. It closes on a second click, a click elsewhere
   or Escape.
