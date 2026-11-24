@@ -132,10 +132,9 @@ rpm and throttle, suspension and road texture, kerb rumble, tyre-slip judder and
 
 ## How it works
 
-```
- game (Wine) ──DirectInput 8──► dinput8.dll ──shared memory──► crossover-ffb.app ──USB HID──► wheel
-             ◄─ virtual G923/G29 ◄──── input ◄───────────────────── input ◄──────────────
-```
+<p align="center">
+  <img src="docs/images/how-it-works.png" width="900" alt="A Windows game in Wine talks DirectInput 8 to the dinput8.dll bridge. The bridge and the crossover-ffb app share a small file in /tmp. The app drives the Logitech wheel over USB HID. Effects flow towards the wheel, and steering, pedal and button input flows back to the game.">
+</p>
 
 - The installer copies `dinput8.dll` next to the game's .exe and adds a per-game
   `dinput8 = native,builtin` override to the Wine prefix. Any DLL or override that was already
