@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+- **G29 identity**: games now see a connected G29 as a G29 (product `c24f`), not as a G923.
+  Assetto Corsa and other games that bind controls to the wheel's product may need the wheel
+  selected again. Update the bridge in each game from the Library, since app and bridge must
+  both be 0.3.0.
+- **New menu bar menu**: one Liquid Glass surface with no panel behind it, native sliders and
+  switches, and the bridge switch in the header. It closes on a second click, a click elsewhere
+  or Escape.
+- **Redesigned settings window** with a slimmer header, clearer empty states and page titles
+  that match the sidebar.
+- Recognised but unsupported wheels (G923 for Xbox, RS50, G PRO) are named and marked as not
+  supported yet. They are never attached or written to.
+- Sliders and switches use the current macOS design. Builds previously recorded an old SDK,
+  which made macOS draw legacy controls.
+- The bridge log (`crossover-ffb-observe.log`) now records which wheel each game was offered,
+  tagged `cfb-bridge-v3`.
+- Groundwork for Logitech's native SDK and newer wheels, disabled and not hardware-tested.
+
 ## 0.2.1
 
 - **Steering Wheel settings**, the G HUB options for the G923 and G29:
