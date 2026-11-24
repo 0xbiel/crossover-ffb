@@ -17,6 +17,11 @@ cp "$binary_dir/CrossoverFFBApp" "$app_dir/Contents/MacOS/CrossoverFFBApp"
 cp -R "$binary_dir/crossover-ffb_CrossoverFFBApp.bundle" "$app_dir/Contents/Resources/"
 cp "$binary_dir/crossover-ffb" "$app_dir/Contents/MacOS/crossover-ffb"
 cp bridge/build/dinput8.dll "$app_dir/Contents/Resources/dinput8.dll"
+# App icon, generated from scripts/app-icon.swift.
+rm -rf .build/AppIcon.iconset
+swiftc -O scripts/app-icon.swift -o .build/app-icon
+.build/app-icon .build/AppIcon.iconset
+iconutil -c icns .build/AppIcon.iconset -o "$app_dir/Contents/Resources/AppIcon.icns"
 cat > "$app_dir/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,6 +31,7 @@ cat > "$app_dir/Contents/Info.plist" <<PLIST
 <key>CFBundleName</key><string>crossover-ffb</string>
 <key>CFBundleDisplayName</key><string>crossover-ffb</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleShortVersionString</key><string>$version</string>
 <key>CFBundleVersion</key><string>$build_number</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
@@ -38,13 +44,53 @@ PLIST
 # Remove only that metadata, never quarantine/security attributes.
 xattr -d com.apple.FinderInfo "$app_dir" 2>/dev/null || true
 codesign --force --sign - "$app_dir"
-# Disk image: the app next to an Applications shortcut, ready to drag across.
+# Disk image: the app next to an Applications shortcut on a background in the app's style.
+# Finder stores the window layout in the image's .DS_Store. Without a scriptable Finder
+# (headless, or automation denied) the image is still built, only without the layout.
 dmg="$PWD/dist/crossover-ffb-$version.dmg"
 staging="$PWD/.build/dmg"
-rm -rf "$staging" "$dmg"
-mkdir -p "$staging"
+rw="$PWD/.build/dmg-rw.dmg"
+volume="crossover-ffb $version"
+rm -rf "$staging" "$dmg" "$rw"
+mkdir -p "$staging/.background"
 cp -R "$app_dir" "$staging/"
 ln -s /Applications "$staging/Applications"
-hdiutil create -quiet -volname "crossover-ffb $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$dmg"
-rm -rf "$staging"
+swiftc -O scripts/dmg-background.swift -o .build/dmg-background
+.build/dmg-background "$version" "$staging/.background/background.tiff"
+# Icon centres drawn by scripts/dmg-background.swift (Layout.app, Layout.applications).
+app_xy="180, 205"; apps_xy="480, 205"; window="660, 420"
+[[ -d "/Volumes/$volume" ]] && hdiutil detach -quiet "/Volumes/$volume"
+hdiutil create -quiet -volname "$volume" -srcfolder "$staging" -fs HFS+ -format UDRW -ov "$rw"
+device=$(hdiutil attach -readwrite -noverify -noautoopen "$rw" | awk '/Apple_HFS/ {print $1}')
+if ! osascript <<APPLESCRIPT
+tell application "Finder"
+    tell disk "$volume"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set {w, h} to {$window}
+        -- Bounds include the 28 pt title bar; the background fills the content below it.
+        set bounds of container window to {200, 120, 200 + w, 120 + h + 28}
+        set options to the icon view options of container window
+        set arrangement of options to not arranged
+        set icon size of options to 112
+        set text size of options to 13
+        set background picture of options to file ".background:background.tiff"
+        set position of item "crossover-ffb.app" of container window to {$app_xy}
+        set position of item "Applications" of container window to {$apps_xy}
+        update without registering applications
+        delay 1
+        close
+    end tell
+end tell
+APPLESCRIPT
+then
+    print -u2 "warning: Finder could not lay out the disk image; it will open as a plain window"
+fi
+chflags hidden "/Volumes/$volume/.background"
+sync
+hdiutil detach -quiet "$device"
+hdiutil convert -quiet "$rw" -format UDZO -imagekey zlib-level=9 -o "$dmg"
+rm -rf "$staging" "$rw"
 print "Packaged: $app_dir and dist/${dmg:t}"
