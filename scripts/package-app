@@ -5,6 +5,8 @@ mkdir -p .build/clang-cache .build/swiftpm-cache
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
 # The version lives in VERSION; releases are tagged v<VERSION>. BUILD_NUMBER is set by CI.
 version=$(tr -d '[:space:]' < VERSION)
+# A suffix such as 0.3.0-beta.1 marks a prerelease; macOS bundle versions stay numeric.
+short_version=${version%%-*}
 build_number=${BUILD_NUMBER:-1}
 scripts/build-bridge
 swift build -c release --product crossover-ffb --cache-path "$PWD/.build/swiftpm-cache" --scratch-path .build --disable-sandbox --build-system native
@@ -32,7 +34,7 @@ cat > "$app_dir/Contents/Info.plist" <<PLIST
 <key>CFBundleDisplayName</key><string>crossover-ffb</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleShortVersionString</key><string>$version</string>
+<key>CFBundleShortVersionString</key><string>$short_version</string>
 <key>CFBundleVersion</key><string>$build_number</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/>
