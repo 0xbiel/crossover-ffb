@@ -15,7 +15,7 @@ final class InstallerTests: XCTestCase {
         b[0x80] = 0x50; b[0x81] = 0x45; b[0x84] = 0x64; b[0x85] = 0x86
         return Data(b)
     }
-    static func bridgeDLL() -> Data { pe64() + Data("cfb-bridge-v2 CFBUID=0".utf8) + Data(count: 24) }
+    static func bridgeDLL() -> Data { pe64() + Data("cfb-bridge-v3 CFBUID=0".utf8) + Data(count: 24) }
 
     func makeGame(registry: String = "WINE REGISTRY Version 2\n;; All keys relative to \\\\User\\\\S-1-5-21\n\n#arch=win64\n\n[Software\\\\Wine] 1700000000\n#time=1\n\"Version\"=\"win10\"\n") throws -> GameEntry {
         let pfx = root.appendingPathComponent("pfx"), game = root.appendingPathComponent("SSD Games/My Game")

@@ -27,7 +27,7 @@ public struct BridgeInstaller: Sendable {
     }
 
     public static let override = "native,builtin"
-    static let marker = Data("cfb-bridge-v2".utf8)
+    static let marker = Data("cfb-bridge-v".utf8)
     static let backupName = "dinput8.dll.crossover-ffb-original"
 
     public var payload: Data // the unpatched DLL shipped with the app
@@ -81,6 +81,9 @@ public struct BridgeInstaller: Sendable {
         let dll = dllURL(game), backup = dll.deletingLastPathComponent().appendingPathComponent(Self.backupName)
         var record = loadRecords()[game.id] ?? Record(executable: game.executable.path, prefix: game.prefix.url.path)
 
+        if let backupData = try? Data(contentsOf: backup), Self.isOurs(backupData) {
+            try wrap { try fm.removeItem(at: backup) }
+        }
         if let existing = try? Data(contentsOf: dll), !Self.isOurs(existing) {
             guard !fm.fileExists(atPath: backup.path) else { throw Failure.backupInTheWay }
             try wrap { try fm.moveItem(at: dll, to: backup) }
@@ -106,6 +109,9 @@ public struct BridgeInstaller: Sendable {
         let dll = dllURL(game), backup = dll.deletingLastPathComponent().appendingPathComponent(Self.backupName)
         let record = loadRecords()[game.id]
         if let data = try? Data(contentsOf: dll), Self.isOurs(data) { try wrap { try fm.removeItem(at: dll) } }
+        if let backupData = try? Data(contentsOf: backup), Self.isOurs(backupData) {
+            try wrap { try fm.removeItem(at: backup) }
+        }
         if fm.fileExists(atPath: backup.path), !fm.fileExists(atPath: dll.path) { try wrap { try fm.moveItem(at: backup, to: dll) } }
         let reg = registryURL(game)
         if let before = try? String(contentsOf: reg, encoding: .utf8) {
