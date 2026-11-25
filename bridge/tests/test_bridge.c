@@ -17,11 +17,11 @@ static int allocations;
 U64 test_unix_ms(void) { return nowMs; }
 U32 test_pid(void) { return 4242; }
 U64 test_ticks(void) { return nowTicks; }
-void test_lock(U64 *p) {
+void test_lock(UPTR *p) {
     while (__atomic_exchange_n(p, 1, __ATOMIC_ACQUIRE))
         sched_yield();
 }
-void test_unlock(U64 *p) { __atomic_store_n(p, 0, __ATOMIC_RELEASE); }
+void test_unlock(UPTR *p) { __atomic_store_n(p, 0, __ATOMIC_RELEASE); }
 void *test_alloc(U32 n) {
     allocations++;
     return calloc(1, n);

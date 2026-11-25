@@ -113,6 +113,46 @@ final class AppPresentationTests: XCTestCase {
         }
     }
 
+    func testRimResourceLookupFindsPackagedAppResourcesAndDegradesWithoutCrashing() async throws {
+        try await MainActor.run {
+            let fm = FileManager.default
+            let tmp = fm.temporaryDirectory.appendingPathComponent("cfb-rim-bundle-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: tmp) }
+            let app = tmp.appendingPathComponent("crossover-ffb.app")
+            let macOS = app.appendingPathComponent("Contents/MacOS")
+            let rims = app.appendingPathComponent("Contents/Resources/\(WheelRimAssets.bundleName)/Rims")
+            try fm.createDirectory(at: macOS, withIntermediateDirectories: true)
+            try fm.createDirectory(at: rims, withIntermediateDirectories: true)
+            try """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>CrossoverFFBApp</string>
+            <key>CFBundleIdentifier</key><string>local.crossover.ffb.test</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            </dict></plist>
+            """.write(to: app.appendingPathComponent("Contents/Info.plist"), atomically: true, encoding: .utf8)
+            let expected = rims.appendingPathComponent("g29-rim.png")
+            try Data([0x89, 0x50, 0x4e, 0x47]).write(to: expected)
+
+            let fakeMain = try XCTUnwrap(Bundle(url: app))
+            let fakeExe = macOS.appendingPathComponent("CrossoverFFBApp")
+            let found = WheelRimAssets.resourceURL(forResource: "g29-rim", withExtension: "png", subdirectory: "Rims",
+                                                   main: fakeMain, codeBundle: fakeMain, executableURL: fakeExe)
+            XCTAssertEqual(found?.resolvingSymlinksInPath(), expected.resolvingSymlinksInPath())
+
+            // Missing resource bundle falls back to nil (schematic) instead of crashing.
+            let emptyApp = tmp.appendingPathComponent("empty.app")
+            try fm.createDirectory(at: emptyApp.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
+            try fm.copyItem(at: app.appendingPathComponent("Contents/Info.plist"),
+                            to: emptyApp.appendingPathComponent("Contents/Info.plist"))
+            let emptyMain = try XCTUnwrap(Bundle(url: emptyApp))
+            let missing = WheelRimAssets.resourceURL(forResource: "g29-rim", withExtension: "png", subdirectory: "Rims",
+                                                     main: emptyMain, codeBundle: emptyMain,
+                                                     executableURL: emptyApp.appendingPathComponent("Contents/MacOS/CrossoverFFBApp"))
+            XCTAssertNil(missing)
+        }
+    }
+
     func testPreviewCannotStartHardwareAndHidingRetainsPreferences() async {
         await MainActor.run {
             let model = AppModel(preview: true)

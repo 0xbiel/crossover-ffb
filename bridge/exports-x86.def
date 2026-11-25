@@ -1,0 +1,7 @@
+LIBRARY dinput8
+EXPORTS
+DirectInput8Create=_DirectInput8Create@20
+DllCanUnloadNow=_DllCanUnloadNow@0
+DllGetClassObject=_DllGetClassObject@12
+DllRegisterServer=_DllRegisterServer@0
+DllUnregisterServer=_DllUnregisterServer@0

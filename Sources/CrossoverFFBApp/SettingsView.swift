@@ -615,7 +615,7 @@ struct GeneralPage: View {
                 Row(symbol: "steeringwheel", color: .indigo, title: "crossover-ffb",
                     subtitle: "Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")") { EmptyView() }
                 Row(symbol: "cable.connector", color: .gray, title: "Supported hardware",
-                    subtitle: "Logitech G923 (PlayStation/PC) and G29 over USB, with 64-bit DirectInput games run through NotProton/Steam, CrossOver or Wine.", divider: false) { EmptyView() }
+                    subtitle: "Logitech G923 (PlayStation/PC) and G29 over USB, with 32-bit and 64-bit DirectInput games run through NotProton/Steam, CrossOver or Wine.", divider: false) { EmptyView() }
             }
             HStack {
                 Button("Show Hidden Games") { model.showHiddenGames() }.glassButton()

@@ -19,20 +19,20 @@ extern void *test_alloc(U32);
 extern void test_free(void *);
 #define allocate test_alloc
 #define dispose test_free
-extern void test_lock(U64 *);
-extern void test_unlock(U64 *);
+extern void test_lock(UPTR *);
+extern void test_unlock(UPTR *);
 extern U64 test_ticks(void);
 #define lock_word test_lock
 #define unlock_word test_unlock
 #define ticks test_ticks
 #else
-IMPORT PTR GetProcessHeap(void);
-IMPORT PTR HeapAlloc(PTR, U32, U64);
-IMPORT int HeapFree(PTR, U32, PTR);
+IMPORT PTR STDCALL GetProcessHeap(void);
+IMPORT PTR STDCALL HeapAlloc(PTR, U32, UPTR);
+IMPORT int STDCALL HeapFree(PTR, U32, PTR);
 static void *allocate(U32 n) { return HeapAlloc(GetProcessHeap(), 8, n); }
 static void dispose(void *p) { HeapFree(GetProcessHeap(), 0, p); }
-IMPORT void AcquireSRWLockExclusive(U64 *);
-IMPORT void ReleaseSRWLockExclusive(U64 *);
+IMPORT void STDCALL AcquireSRWLockExclusive(UPTR *);
+IMPORT void STDCALL ReleaseSRWLockExclusive(UPTR *);
 #define lock_word AcquireSRWLockExclusive
 #define unlock_word ReleaseSRWLockExclusive
 #define ticks GetTickCount64
@@ -103,44 +103,44 @@ static void instance_info(void *out, int wide) {
     }
 }
 typedef struct Factory Factory;
-static U32 fa(Factory *);
-static U32 fr(Factory *);
+static U32 STDCALL fa(Factory *);
+static U32 STDCALL fr(Factory *);
 typedef struct Device Device;
 static HR physical_path(Device *, Property *);
 typedef struct Effect Effect;
 typedef struct {
-    HR (*QueryInterface)(Device *, const GUID *, void **);
-    U32 (*AddRef)(Device *);
-    U32 (*Release)(Device *);
-    HR (*GetCapabilities)(Device *, Caps *);
-    HR (*EnumObjects)(Device *, PTR, PTR, U32);
-    HR (*GetProperty)(Device *, const GUID *, Property *);
-    HR (*SetProperty)(Device *, const GUID *, const Property *);
-    HR (*Acquire)(Device *);
-    HR (*Unacquire)(Device *);
-    HR (*GetDeviceState)(Device *, U32, PTR);
-    HR (*GetDeviceData)(Device *, U32, DeviceEvent *, U32 *, U32);
-    HR (*SetDataFormat)(Device *, const DataFormat *);
-    HR (*SetEventNotification)(Device *, PTR);
-    HR (*SetCooperativeLevel)(Device *, PTR, U32);
-    HR (*GetObjectInfo)(Device *, PTR, U32, U32);
-    HR (*GetDeviceInfo)(Device *, PTR);
-    HR (*RunControlPanel)(Device *, PTR, U32);
-    HR (*Initialize)(Device *, PTR, U32, const GUID *);
-    HR (*CreateEffect)(Device *, const GUID *, const EffectParams *, Effect **, PTR);
-    HR (*EnumEffects)(Device *, PTR, PTR, U32);
-    HR (*GetEffectInfo)(Device *, PTR, const GUID *);
-    HR (*GetForceFeedbackState)(Device *, U32 *);
-    HR (*SendForceFeedbackCommand)(Device *, U32);
-    HR (*EnumCreatedEffectObjects)(Device *, PTR, PTR, U32);
-    HR (*Escape)(Device *, PTR);
-    HR (*Poll)(Device *);
-    HR (*SendDeviceData)(Device *, U32, const DeviceEvent *, U32 *, U32);
-    HR (*EnumEffectsInFile)(Device *, const void *, PTR, PTR, U32);
-    HR (*WriteEffectToFile)(Device *, const void *, U32, PTR, U32);
-    HR (*BuildActionMap)(Device *, PTR, const void *, U32);
-    HR (*SetActionMap)(Device *, PTR, const void *, U32);
-    HR (*GetImageInfo)(Device *, PTR);
+    HR (STDCALL *QueryInterface)(Device *, const GUID *, void **);
+    U32 (STDCALL *AddRef)(Device *);
+    U32 (STDCALL *Release)(Device *);
+    HR (STDCALL *GetCapabilities)(Device *, Caps *);
+    HR (STDCALL *EnumObjects)(Device *, PTR, PTR, U32);
+    HR (STDCALL *GetProperty)(Device *, const GUID *, Property *);
+    HR (STDCALL *SetProperty)(Device *, const GUID *, const Property *);
+    HR (STDCALL *Acquire)(Device *);
+    HR (STDCALL *Unacquire)(Device *);
+    HR (STDCALL *GetDeviceState)(Device *, U32, PTR);
+    HR (STDCALL *GetDeviceData)(Device *, U32, DeviceEvent *, U32 *, U32);
+    HR (STDCALL *SetDataFormat)(Device *, const DataFormat *);
+    HR (STDCALL *SetEventNotification)(Device *, PTR);
+    HR (STDCALL *SetCooperativeLevel)(Device *, PTR, U32);
+    HR (STDCALL *GetObjectInfo)(Device *, PTR, U32, U32);
+    HR (STDCALL *GetDeviceInfo)(Device *, PTR);
+    HR (STDCALL *RunControlPanel)(Device *, PTR, U32);
+    HR (STDCALL *Initialize)(Device *, PTR, U32, const GUID *);
+    HR (STDCALL *CreateEffect)(Device *, const GUID *, const EffectParams *, Effect **, PTR);
+    HR (STDCALL *EnumEffects)(Device *, PTR, PTR, U32);
+    HR (STDCALL *GetEffectInfo)(Device *, PTR, const GUID *);
+    HR (STDCALL *GetForceFeedbackState)(Device *, U32 *);
+    HR (STDCALL *SendForceFeedbackCommand)(Device *, U32);
+    HR (STDCALL *EnumCreatedEffectObjects)(Device *, PTR, PTR, U32);
+    HR (STDCALL *Escape)(Device *, PTR);
+    HR (STDCALL *Poll)(Device *);
+    HR (STDCALL *SendDeviceData)(Device *, U32, const DeviceEvent *, U32 *, U32);
+    HR (STDCALL *EnumEffectsInFile)(Device *, const void *, PTR, PTR, U32);
+    HR (STDCALL *WriteEffectToFile)(Device *, const void *, U32, PTR, U32);
+    HR (STDCALL *BuildActionMap)(Device *, PTR, const void *, U32);
+    HR (STDCALL *SetActionMap)(Device *, PTR, const void *, U32);
+    HR (STDCALL *GetImageInfo)(Device *, PTR);
 } DeviceVT;
 typedef struct {
     U32 offset, source, width;
@@ -151,7 +151,7 @@ struct Device {
     const DeviceVT *v;
     Factory *pathFactory; /* metadata only; never acquire the physical device */
     U32 refs;
-    U64 lock;
+    UPTR lock;
     int wide, acquired, paused, actuatorsOff;
     U32 formatSize, mapCount, bufferSize, queueHead, queueCount, overflow;
     Mapping maps[512];
@@ -242,7 +242,7 @@ static void object_info(Device *d, PTR out, U32 s) {
         nameA(p->name, sourceName(s));
     }
 }
-static HR dq(Device *d, const GUID *i, void **out) {
+static HR STDCALL dq(Device *d, const GUID *i, void **out) {
     if (!out)
         return POINTER;
     *out = 0;
@@ -253,9 +253,9 @@ static HR dq(Device *d, const GUID *i, void **out) {
     }
     return NOINTERFACE;
 }
-static U32 da(Device *d) { return retain(&d->refs); }
+static U32 STDCALL da(Device *d) { return retain(&d->refs); }
 static void publish_released(Device *d);
-static U32 dr(Device *d) {
+static U32 STDCALL dr(Device *d) {
     U32 r = decrement(&d->refs);
     if (!r) {
         publish_released(d);
@@ -284,7 +284,7 @@ static HR caps(Device *d, Caps *p) {
     p->driver = 1;
     return OK;
 }
-static HR objects(Device *d, PTR cb, PTR context, U32 flags) {
+static HR STDCALL objects(Device *d, PTR cb, PTR context, U32 flags) {
     if (!cb)
         return INVALID;
     da(d);
@@ -302,13 +302,13 @@ static HR objects(Device *d, PTR cb, PTR context, U32 flags) {
             lock_word(&d->lock);
             object_info(d, &o, s);
             unlock_word(&d->lock);
-            more = ((int (*)(const ObjectW *, PTR))cb)(&o, context);
+            more = ((int (STDCALL *)(const ObjectW *, PTR))cb)(&o, context);
         } else {
             ObjectA o;
             lock_word(&d->lock);
             object_info(d, &o, s);
             unlock_word(&d->lock);
-            more = ((int (*)(const ObjectA *, PTR))cb)(&o, context);
+            more = ((int (STDCALL *)(const ObjectA *, PTR))cb)(&o, context);
         }
         if (!more)
             break;
@@ -333,7 +333,7 @@ static int valid_property(const Property *p, U32 size) {
 }
 static void publish(Device *d);
 static HR property(Device *d, const GUID *g, Property *p, int set) {
-    U64 id = (U64)g;
+    UPTR id = (UPTR)g;
     if (id > 0xffff || !p)
         return INVALID;
     if (id == 12) { /* DIPROP_GUIDANDPATH; always Unicode, including A interfaces */
@@ -531,20 +531,20 @@ static U32 scaled(Device *d, const Snapshot *s, U32 a) {
         return s->axis[a];
     long long raw = s->axis[a];
     if (!d->deadzone[a] && d->saturation[a] == 10000)
-        return (U32)((long long)d->min[a] + raw * ((long long)d->max[a] - d->min[a]) / 65535);
+        return (U32)((long long)d->min[a] + sdiv64(raw * ((long long)d->max[a] - d->min[a]), 65535));
     long long delta = raw - 32768, mag = delta < 0 ? -delta : delta;
-    long long dead = (long long)d->deadzone[a] * 32768 / 10000,
-              sat = (long long)d->saturation[a] * 32768 / 10000;
+    long long dead = (long long)((d->deadzone[a] * 32768u) / 10000u),
+              sat = (long long)((d->saturation[a] * 32768u) / 10000u);
     if (mag <= dead)
         raw = 32768;
     else if (mag >= sat || sat <= dead)
         raw = delta < 0 ? 0 : 65535;
     else {
-        long long value = (mag - dead) * 32767 / (sat - dead);
+        long long value = sdiv64((mag - dead) * 32767, sat - dead);
         raw = 32768 + (delta < 0 ? -value : value);
     }
     long long span = (long long)d->max[a] - d->min[a];
-    return (U32)((long long)d->min[a] + raw * span / 65535);
+    return (U32)((long long)d->min[a] + sdiv64(raw * span, 65535));
 }
 static void values(Device *d, const Snapshot *s, U32 out[30]) {
     for (U32 i = 0; i < 4; i++)
@@ -655,7 +655,7 @@ static HR data(Device *d, U32 bytes, DeviceEvent *out, U32 *count, U32 flags) {
     }
     return result;
 }
-static HR notification(Device *d, PTR h) {
+static HR STDCALL notification(Device *d, PTR h) {
     (void)d;
     return h ? 2 : OK; /* DI_POLLEDDEVICE: the event is never signalled */
 }
@@ -686,31 +686,31 @@ static HR getinfo(Device *d, PTR out) {
     instance_info(out, d->wide);
     return OK;
 }
-static HR devicepanel(Device *d, PTR w, U32 f) {
+static HR STDCALL devicepanel(Device *d, PTR w, U32 f) {
     (void)d;
     (void)w;
     (void)f;
     return OK;
 }
-static HR deviceinit(Device *d, PTR h, U32 version, const GUID *g) {
+static HR STDCALL deviceinit(Device *d, PTR h, U32 version, const GUID *g) {
     (void)d;
     (void)h;
     return version >= 0x700 && same(g, &virtualGuid) ? OK : INVALID;
 }
 typedef struct {
-    HR (*QueryInterface)(Effect *, const GUID *, void **);
-    U32 (*AddRef)(Effect *);
-    U32 (*Release)(Effect *);
-    HR (*Initialize)(Effect *, PTR, U32, const GUID *);
-    HR (*GetEffectGuid)(Effect *, GUID *);
-    HR (*GetParameters)(Effect *, EffectParams *, U32);
-    HR (*SetParameters)(Effect *, const EffectParams *, U32);
-    HR (*Start)(Effect *, U32, U32);
-    HR (*Stop)(Effect *);
-    HR (*GetEffectStatus)(Effect *, U32 *);
-    HR (*Download)(Effect *);
-    HR (*Unload)(Effect *);
-    HR (*Escape)(Effect *, PTR);
+    HR (STDCALL *QueryInterface)(Effect *, const GUID *, void **);
+    U32 (STDCALL *AddRef)(Effect *);
+    U32 (STDCALL *Release)(Effect *);
+    HR (STDCALL *Initialize)(Effect *, PTR, U32, const GUID *);
+    HR (STDCALL *GetEffectGuid)(Effect *, GUID *);
+    HR (STDCALL *GetParameters)(Effect *, EffectParams *, U32);
+    HR (STDCALL *SetParameters)(Effect *, const EffectParams *, U32);
+    HR (STDCALL *Start)(Effect *, U32, U32);
+    HR (STDCALL *Stop)(Effect *);
+    HR (STDCALL *GetEffectStatus)(Effect *, U32 *);
+    HR (STDCALL *Download)(Effect *);
+    HR (STDCALL *Unload)(Effect *);
+    HR (STDCALL *Escape)(Effect *, PTR);
 } EffectVT;
 struct Effect {
     const EffectVT *v;
@@ -791,7 +791,7 @@ static void write_record(Device *d, volatile unsigned char *r, Effect *e) {
     for (U32 i = 0; i < 24; i++)
         st32(r + 4 * i, words[i]);
 }
-static U64 publishLock;
+static UPTR publishLock;
 /* Mirror this device's force state into shared memory (seqlock writer). */
 static void publish(Device *d) {
     volatile unsigned char *p = shm_map();
@@ -821,8 +821,8 @@ static void publish_released(Device *d) {
     publish(&empty);
     publisher = 0;
 }
-static U32 ea(Effect *e) { return retain(&e->refs); }
-static U32 er(Effect *e) {
+static U32 STDCALL ea(Effect *e) { return retain(&e->refs); }
+static U32 STDCALL er(Effect *e) {
     Device *d = e->device;
     lock_word(&d->lock);
     U32 r = decrement(&e->refs);
@@ -840,7 +840,7 @@ static U32 er(Effect *e) {
     }
     return r;
 }
-static HR eq(Effect *e, const GUID *g, void **out) {
+static HR STDCALL eq(Effect *e, const GUID *g, void **out) {
     if (!out)
         return POINTER;
     *out = 0;
@@ -851,11 +851,11 @@ static HR eq(Effect *e, const GUID *g, void **out) {
     }
     return NOINTERFACE;
 }
-static HR ei(Effect *e, PTR h, U32 version, const GUID *g) {
+static HR STDCALL ei(Effect *e, PTR h, U32 version, const GUID *g) {
     (void)h;
     return version >= 0x700 && same(g, &e->guid) ? OK : INVALID;
 }
-static HR eg(Effect *e, GUID *g) {
+static HR STDCALL eg(Effect *e, GUID *g) {
     if (!g)
         return POINTER;
     *g = e->guid;
@@ -881,7 +881,7 @@ static HR estart(Effect *e, U32 repeat, U32 flags) {
     e->startAt = ticks() + e->p.startDelay / 1000;
     e->endAt = e->p.duration == 0xffffffffu || repeat == 0xffffffffu
                    ? 0
-                   : e->startAt + ((U64)e->p.duration * repeat + 999) / 1000;
+                   : e->startAt + udiv64((U64)e->p.duration * repeat + 999, 1000);
     return OK;
 }
 static HR estop(Effect *e) {
@@ -904,12 +904,12 @@ static HR eunload(Effect *e) {
     e->downloaded = e->playing = 0;
     return OK;
 }
-static HR eescape(Effect *e, PTR p) {
+static HR STDCALL eescape(Effect *e, PTR p) {
     (void)e;
     (void)p;
     return UNSUPPORTED;
 }
-static int effect_size(const EffectParams *p) { return p && (p->size == sizeof(*p) || p->size == 72); }
+static int effect_size(const EffectParams *p) { return p && (p->size == sizeof(*p) || p->size == EFFECT_PARAMS_DX5_SIZE); }
 static HR eset(Effect *e, const EffectParams *p, U32 flags) {
     if (!effect_size(p) || flags & ~0xe00003ffu)
         return INVALID;
@@ -1022,7 +1022,7 @@ static HR eget(Effect *e, EffectParams *p, U32 flags) {
     return OK;
 }
 #define EWRAP0(name, mirror)                                                                                 \
-    static HR locked_##name(Effect *e) {                                                                     \
+    static HR STDCALL locked_##name(Effect *e) {                                                             \
         lock_word(&e->device->lock);                                                                         \
         HR h = name(e);                                                                                      \
         if (mirror)                                                                                          \
@@ -1031,7 +1031,7 @@ static HR eget(Effect *e, EffectParams *p, U32 flags) {
         return h;                                                                                            \
     }
 #define EWRAP1(name, T, a, mirror)                                                                           \
-    static HR locked_##name(Effect *e, T a) {                                                                \
+    static HR STDCALL locked_##name(Effect *e, T a) {                                                        \
         lock_word(&e->device->lock);                                                                         \
         HR h = name(e, a);                                                                                   \
         if (mirror)                                                                                          \
@@ -1040,7 +1040,7 @@ static HR eget(Effect *e, EffectParams *p, U32 flags) {
         return h;                                                                                            \
     }
 #define EWRAP2(name, T, a, V, b, mirror)                                                                     \
-    static HR locked_##name(Effect *e, T a, V b) {                                                           \
+    static HR STDCALL locked_##name(Effect *e, T a, V b) {                                                   \
         lock_word(&e->device->lock);                                                                         \
         HR h = name(e, a, b);                                                                                \
         if (mirror)                                                                                          \
@@ -1098,7 +1098,7 @@ static HR effect_create(Device *d, const GUID *g, const EffectParams *p, Effect 
     e->p.duration = 0xffffffffu;
     e->p.trigger = 0xffffffffu;
     if (p) {
-        HR hr = eset(e, p, (p->size == 72 ? 0x1ffu : 0x3ffu) | 0x80000000u);
+        HR hr = eset(e, p, (p->size == EFFECT_PARAMS_DX5_SIZE ? 0x1ffu : 0x3ffu) | 0x80000000u);
         if (hr) {
             dispose(e);
             return hr;
@@ -1141,7 +1141,7 @@ static void effect_info(Device *d, PTR out, U32 kind) {
         nameA(p->name, effect_name(kind));
     }
 }
-static HR enum_effects(Device *d, PTR cb, PTR ctx, U32 type) {
+static HR STDCALL enum_effects(Device *d, PTR cb, PTR ctx, U32 type) {
     if (!cb)
         return INVALID;
     da(d);
@@ -1152,11 +1152,11 @@ static HR enum_effects(Device *d, PTR cb, PTR ctx, U32 type) {
         if (d->wide) {
             EffectInfoW p;
             effect_info(d, &p, kind);
-            result = ((int (*)(const EffectInfoW *, PTR))cb)(&p, ctx);
+            result = ((int (STDCALL *)(const EffectInfoW *, PTR))cb)(&p, ctx);
         } else {
             EffectInfoA p;
             effect_info(d, &p, kind);
-            result = ((int (*)(const EffectInfoA *, PTR))cb)(&p, ctx);
+            result = ((int (STDCALL *)(const EffectInfoA *, PTR))cb)(&p, ctx);
         }
         if (!result)
             break;
@@ -1164,7 +1164,7 @@ static HR enum_effects(Device *d, PTR cb, PTR ctx, U32 type) {
     dr(d);
     return OK;
 }
-static HR effect_info_get(Device *d, PTR out, const GUID *g) {
+static HR STDCALL effect_info_get(Device *d, PTR out, const GUID *g) {
     if (!out)
         return POINTER;
     if (*(U32 *)out != (d->wide ? sizeof(EffectInfoW) : sizeof(EffectInfoA)))
@@ -1212,7 +1212,7 @@ static HR command(Device *d, U32 flags) {
     publish(d);
     return OK;
 }
-static HR enum_created(Device *d, PTR cb, PTR ctx, U32 flags) {
+static HR STDCALL enum_created(Device *d, PTR cb, PTR ctx, U32 flags) {
     if (!cb || flags)
         return INVALID;
     Effect *list[32];
@@ -1228,18 +1228,18 @@ static HR enum_created(Device *d, PTR cb, PTR ctx, U32 flags) {
     int more = 1;
     for (U32 i = 0; i < count; i++) {
         if (more)
-            more = ((int (*)(Effect *, PTR))cb)(list[i], ctx);
+            more = ((int (STDCALL *)(Effect *, PTR))cb)(list[i], ctx);
         er(list[i]);
     }
     dr(d);
     return OK;
 }
-static HR escape(Device *d, PTR p) {
+static HR STDCALL escape(Device *d, PTR p) {
     (void)d;
     (void)p;
     return UNSUPPORTED;
 }
-static HR senddata(Device *d, U32 size, const DeviceEvent *p, U32 *n, U32 flags) {
+static HR STDCALL senddata(Device *d, U32 size, const DeviceEvent *p, U32 *n, U32 flags) {
     (void)d;
     (void)size;
     (void)p;
@@ -1248,7 +1248,7 @@ static HR senddata(Device *d, U32 size, const DeviceEvent *p, U32 *n, U32 flags)
         *n = 0;
     return UNSUPPORTED;
 }
-static HR effectsfile(Device *d, const void *name, PTR cb, PTR ctx, U32 f) {
+static HR STDCALL effectsfile(Device *d, const void *name, PTR cb, PTR ctx, U32 f) {
     (void)d;
     (void)name;
     (void)cb;
@@ -1256,7 +1256,7 @@ static HR effectsfile(Device *d, const void *name, PTR cb, PTR ctx, U32 f) {
     (void)f;
     return UNSUPPORTED;
 }
-static HR writefile(Device *d, const void *name, U32 n, PTR p, U32 f) {
+static HR STDCALL writefile(Device *d, const void *name, U32 n, PTR p, U32 f) {
     (void)d;
     (void)name;
     (void)n;
@@ -1264,14 +1264,14 @@ static HR writefile(Device *d, const void *name, U32 n, PTR p, U32 f) {
     (void)f;
     return UNSUPPORTED;
 }
-static HR actionmap(Device *d, PTR p, const void *n, U32 f) {
+static HR STDCALL actionmap(Device *d, PTR p, const void *n, U32 f) {
     (void)d;
     (void)p;
     (void)n;
     (void)f;
     return UNSUPPORTED;
 }
-static HR imageinfo(Device *d, PTR p) {
+static HR STDCALL imageinfo(Device *d, PTR p) {
     (void)d;
     (void)p;
     return UNSUPPORTED;
@@ -1279,7 +1279,7 @@ static HR imageinfo(Device *d, PTR p) {
 /* Serialize mutable virtual input/effect state. Never hold this lock across
  * callbacks. */
 #define WRAP0(name, slot)                                                                                    \
-    static HR locked_##name(Device *d) {                                                                     \
+    static HR STDCALL locked_##name(Device *d) {                                                             \
         lock_word(&d->lock);                                                                                 \
         HR h = name(d);                                                                                      \
         diagnostic(d, slot, #name "_result", h);                                                             \
@@ -1287,7 +1287,7 @@ static HR imageinfo(Device *d, PTR p) {
         return h;                                                                                            \
     }
 #define WRAP1(name, T, a, slot)                                                                              \
-    static HR locked_##name(Device *d, T a) {                                                                \
+    static HR STDCALL locked_##name(Device *d, T a) {                                                        \
         lock_word(&d->lock);                                                                                 \
         HR h = name(d, a);                                                                                   \
         diagnostic(d, slot, #name "_result", h);                                                             \
@@ -1295,7 +1295,7 @@ static HR imageinfo(Device *d, PTR p) {
         return h;                                                                                            \
     }
 #define WRAP2(name, T, a, V, b, slot)                                                                        \
-    static HR locked_##name(Device *d, T a, V b) {                                                           \
+    static HR STDCALL locked_##name(Device *d, T a, V b) {                                                   \
         lock_word(&d->lock);                                                                                 \
         HR h = name(d, a, b);                                                                                \
         diagnostic(d, slot, #name "_result", h);                                                             \
@@ -1312,7 +1312,7 @@ WRAP1(command, U32, f, 6)
 WRAP1(getinfo, PTR, p, 7)
 WRAP2(getprop, const GUID *, g, Property *, p, 9)
 WRAP2(cooperative, PTR, window, U32, f, 10)
-static HR locked_state(Device *d, U32 n, PTR p) {
+static HR STDCALL locked_state(Device *d, U32 n, PTR p) {
     lock_word(&d->lock);
     HR h = state(d, n, p);
     if (diagnostic(d, 8, "GetDeviceState_result", h)) {
@@ -1327,32 +1327,32 @@ static HR locked_state(Device *d, U32 n, PTR p) {
     unlock_word(&d->lock);
     return h;
 }
-static HR locked_setprop(Device *d, const GUID *g, const Property *p) {
+static HR STDCALL locked_setprop(Device *d, const GUID *g, const Property *p) {
     lock_word(&d->lock);
     HR h = setprop(d, g, p);
-    if (d->diagProperty != (U32)(U64)g) {
-        d->diagProperty = (U32)(U64)g;
+    if (d->diagProperty != (U32)(UPTR)g) {
+        d->diagProperty = (U32)(UPTR)g;
         d->diagSeen &= ~(1u << 11);
     }
     if (diagnostic(d, 11, "SetProperty_result", h))
-        event("Property_id", (U32)(U64)g, 0);
+        event("Property_id", (U32)(UPTR)g, 0);
     unlock_word(&d->lock);
     return h;
 }
-static HR locked_data(Device *d, U32 n, DeviceEvent *p, U32 *c, U32 f) {
+static HR STDCALL locked_data(Device *d, U32 n, DeviceEvent *p, U32 *c, U32 f) {
     lock_word(&d->lock);
     HR h = data(d, n, p, c, f);
     diagnostic(d, 12, "GetDeviceData_result", h);
     unlock_word(&d->lock);
     return h;
 }
-static HR locked_getobject(Device *d, PTR p, U32 o, U32 how) {
+static HR STDCALL locked_getobject(Device *d, PTR p, U32 o, U32 how) {
     lock_word(&d->lock);
     HR h = getobject(d, p, o, how);
     unlock_word(&d->lock);
     return h;
 }
-static HR locked_effect_create(Device *d, const GUID *g, const EffectParams *p, Effect **out, PTR outer) {
+static HR STDCALL locked_effect_create(Device *d, const GUID *g, const EffectParams *p, Effect **out, PTR outer) {
     lock_word(&d->lock);
     HR h = effect_create(d, g, p, out, outer);
     unlock_word(&d->lock);
@@ -1391,17 +1391,17 @@ static const DeviceVT dvt = {dq,
                              actionmap,
                              imageinfo};
 typedef struct {
-    HR (*QueryInterface)(Factory *, const GUID *, void **);
-    U32 (*AddRef)(Factory *);
-    U32 (*Release)(Factory *);
-    HR (*CreateDevice)(Factory *, const GUID *, void **, PTR);
-    HR (*EnumDevices)(Factory *, U32, PTR, PTR, U32);
-    HR (*GetDeviceStatus)(Factory *, const GUID *);
-    HR (*RunControlPanel)(Factory *, PTR, U32);
-    HR (*Initialize)(Factory *, PTR, U32);
-    HR (*FindDevice)(Factory *, const GUID *, const void *, GUID *);
-    HR (*EnumDevicesBySemantics)(Factory *, const void *, PTR, PTR, PTR, U32);
-    HR (*ConfigureDevices)(Factory *, PTR, PTR, U32, PTR);
+    HR (STDCALL *QueryInterface)(Factory *, const GUID *, void **);
+    U32 (STDCALL *AddRef)(Factory *);
+    U32 (STDCALL *Release)(Factory *);
+    HR (STDCALL *CreateDevice)(Factory *, const GUID *, void **, PTR);
+    HR (STDCALL *EnumDevices)(Factory *, U32, PTR, PTR, U32);
+    HR (STDCALL *GetDeviceStatus)(Factory *, const GUID *);
+    HR (STDCALL *RunControlPanel)(Factory *, PTR, U32);
+    HR (STDCALL *Initialize)(Factory *, PTR, U32);
+    HR (STDCALL *FindDevice)(Factory *, const GUID *, const void *, GUID *);
+    HR (STDCALL *EnumDevicesBySemantics)(Factory *, const void *, PTR, PTR, PTR, U32);
+    HR (STDCALL *ConfigureDevices)(Factory *, PTR, PTR, U32, PTR);
 } FactoryVT;
 struct Factory {
     const FactoryVT *v;
@@ -1409,8 +1409,8 @@ struct Factory {
     int wide;
     Factory *real; /* system dinput8 factory for every other device, may be 0 */
 };
-static U32 fa(Factory *f) { return retain(&f->refs); }
-static U32 fr(Factory *f) {
+static U32 STDCALL fa(Factory *f) { return retain(&f->refs); }
+static U32 STDCALL fr(Factory *f) {
     U32 r = decrement(&f->refs);
     if (!r) {
         if (f->real)
@@ -1420,7 +1420,7 @@ static U32 fr(Factory *f) {
     }
     return r;
 }
-static HR fq(Factory *f, const GUID *i, void **out) {
+static HR STDCALL fq(Factory *f, const GUID *i, void **out) {
     if (!out)
         return POINTER;
     *out = 0;
@@ -1431,7 +1431,7 @@ static HR fq(Factory *f, const GUID *i, void **out) {
     }
     return NOINTERFACE;
 }
-static HR create(Factory *f, const GUID *g, void **out, PTR outer) {
+static HR STDCALL create(Factory *f, const GUID *g, void **out, PTR outer) {
     if (!out)
         return POINTER;
     *out = 0;
@@ -1461,7 +1461,7 @@ static HR create(Factory *f, const GUID *g, void **out, PTR outer) {
 /* Original metadata forwarding implementation. Refuse ambiguous matches instead of
  * manufacturing a path or selecting the first wheel. Query on demand across reconnects. */
 typedef struct { U32 product, count; GUID instance; int wide; } PathSearch;
-static int path_candidate(const void *info, PTR context) {
+static int STDCALL path_candidate(const void *info, PTR context) {
     PathSearch *search = context;
     const InstanceA *a = info;
     const InstanceW *w = info;
@@ -1516,13 +1516,13 @@ typedef struct {
     PTR cb, ctx;
     U32 hidden;
 } EnumContext;
-static int enum_filter(const unsigned char *info, PTR c) {
+static int STDCALL enum_filter(const unsigned char *info, PTR c) {
     EnumContext *e = c;
     if (hidden_product((const GUID *)(info + 20))) {
         e->hidden++;
         return 1;
     }
-    return ((int (*)(const void *, PTR))e->cb)(info, e->ctx);
+    return ((int (STDCALL *)(const void *, PTR))e->cb)(info, e->ctx);
 }
 /* Games pick their wheel from enumeration alone, so record what each one was offered.
  * Rate-limited like device diagnostics: a change, or at most every five seconds. */
@@ -1543,7 +1543,7 @@ static void enum_event(U32 kind, U32 flags, U32 offered, U32 hidden, HR result) 
     event("EnumDevices_hiddenReal", hidden, 0);
     event("EnumDevices_result", (U32)result, 0);
 }
-static HR enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
+static HR STDCALL enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
     if (!cb)
         return INVALID;
     int more = 1;
@@ -1557,11 +1557,11 @@ static HR enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
             if (f->wide) {
                 InstanceW info;
                 instance_info(&info, 1);
-                more = ((int (*)(const InstanceW *, PTR))cb)(&info, ctx);
+                more = ((int (STDCALL *)(const InstanceW *, PTR))cb)(&info, ctx);
             } else {
                 InstanceA info;
                 instance_info(&info, 0);
-                more = ((int (*)(const InstanceA *, PTR))cb)(&info, ctx);
+                more = ((int (STDCALL *)(const InstanceA *, PTR))cb)(&info, ctx);
             }
             fr(f);
         }
@@ -1571,29 +1571,29 @@ static HR enumerate(Factory *f, U32 kind, PTR cb, PTR ctx, U32 flags) {
     enum_event(kind, flags, offered, e.hidden, result);
     return result;
 }
-static HR status(Factory *f, const GUID *g) {
+static HR STDCALL status(Factory *f, const GUID *g) {
     if (!same(g, &virtualGuid))
         return f->real ? f->real->v->GetDeviceStatus(f->real, g) : NOTFOUND;
     Snapshot s;
     return read_snapshot(&s) ? OK : 1; /* DI_NOTATTACHED */
 }
-static HR panel(Factory *f, PTR h, U32 flags) { return f->real ? f->real->v->RunControlPanel(f->real, h, flags) : OK; }
-static HR initialize(Factory *f, PTR h, U32 version) {
+static HR STDCALL panel(Factory *f, PTR h, U32 flags) { return f->real ? f->real->v->RunControlPanel(f->real, h, flags) : OK; }
+static HR STDCALL initialize(Factory *f, PTR h, U32 version) {
     (void)h;
     (void)f;
     return version == 0x800 ? OK : INVALID;
 }
-static HR find(Factory *f, const GUID *g, const void *n, GUID *out) {
+static HR STDCALL find(Factory *f, const GUID *g, const void *n, GUID *out) {
     if (f->real)
         return f->real->v->FindDevice(f->real, g, n, out);
     if (out)
         zero(out, 16);
     return NOTFOUND;
 }
-static HR semantics(Factory *f, const void *n, PTR fmt, PTR cb, PTR ctx, U32 flags) {
+static HR STDCALL semantics(Factory *f, const void *n, PTR fmt, PTR cb, PTR ctx, U32 flags) {
     return f->real ? f->real->v->EnumDevicesBySemantics(f->real, n, fmt, cb, ctx, flags) : OK;
 }
-static HR configure(Factory *f, PTR cb, PTR p, U32 flags, PTR ctx) {
+static HR STDCALL configure(Factory *f, PTR cb, PTR p, U32 flags, PTR ctx) {
     return f->real ? f->real->v->ConfigureDevices(f->real, cb, p, flags, ctx) : UNSUPPORTED;
 }
 static const FactoryVT fvt = {fq,    fa,         fr,   create,    enumerate, status,
@@ -1604,10 +1604,10 @@ static Factory *real_factory(PTR h, U32 version, const GUID *i) {
     return 0;
 }
 #else
-IMPORT U32 GetSystemDirectoryW(U16 *, U32);
-IMPORT PTR LoadLibraryW(const U16 *);
-IMPORT PTR GetProcAddress(PTR, const char *);
-typedef HR (*CreateFn)(PTR, U32, const GUID *, void **, PTR);
+IMPORT U32 STDCALL GetSystemDirectoryW(U16 *, U32);
+IMPORT PTR STDCALL LoadLibraryW(const U16 *);
+IMPORT PTR STDCALL GetProcAddress(PTR, const char *);
+typedef HR (STDCALL *CreateFn)(PTR, U32, const GUID *, void **, PTR);
 static CreateFn realCreate;
 static int realTried;
 /* Loaded lazily (never under the loader lock). Failure only disables
@@ -1636,7 +1636,7 @@ static Factory *real_factory(PTR h, U32 version, const GUID *i) {
     return real;
 }
 #endif
-HR DirectInput8Create(PTR h, U32 version, const GUID *i, void **out, PTR outer) {
+HR STDCALL DirectInput8Create(PTR h, U32 version, const GUID *i, void **out, PTR outer) {
     event("DirectInput8Create", version, i);
     if (!out)
         return POINTER;
@@ -1659,13 +1659,13 @@ HR DirectInput8Create(PTR h, U32 version, const GUID *i, void **out, PTR outer) 
     *out = f;
     return OK;
 }
-HR DllCanUnloadNow(void) { return __atomic_load_n(&liveObjects, __ATOMIC_RELAXED) ? 1 : 0; }
-HR DllGetClassObject(const GUID *c, const GUID *i, void **out) {
+HR STDCALL DllCanUnloadNow(void) { return __atomic_load_n(&liveObjects, __ATOMIC_RELAXED) ? 1 : 0; }
+HR STDCALL DllGetClassObject(const GUID *c, const GUID *i, void **out) {
     (void)c;
     (void)i;
     if (out)
         *out = 0;
     return 0x80040111u; /* CLASS_E_CLASSNOTAVAILABLE */
 }
-HR DllRegisterServer(void) { return OK; }
-HR DllUnregisterServer(void) { return OK; }
+HR STDCALL DllRegisterServer(void) { return OK; }
+HR STDCALL DllUnregisterServer(void) { return OK; }

@@ -20,8 +20,15 @@
 - The bridge log (`crossover-ffb-observe.log`) now records which wheel each game was offered,
   tagged `cfb-bridge-v3`.
 - Groundwork for Logitech's native SDK and newer wheels, disabled and not hardware-tested.
+- **32-bit bridge (`dinput8-x86.dll`)**: crossover-ffb now builds and installs a matching 32-bit
+  bridge for 32-bit Windows games and launchers (auto-discovering Assetto Corsa's Content Manager
+  when kept in its own folder inside the prefix), so 32-bit control wizards and 64-bit driving
+  engines see the same virtual wheel and axis layout.
 - **App icon and installer**: the app has its own icon, and the disk image opens to a styled
   window with drag-to-Applications and first-launch instructions.
+- Fixed: packaged builds no longer crash when a wheel connects (removed SwiftPM's `Bundle.module`
+  lookup in favour of resolving `Contents/Resources/` directly with a schematic fallback), and
+  `BridgeInstaller` recognises `cfb-bridge-v3` and cleans up self-backups from earlier betas.
 
 ## 0.2.1
 

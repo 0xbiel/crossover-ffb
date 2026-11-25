@@ -15,7 +15,14 @@ final class InstallerTests: XCTestCase {
         b[0x80] = 0x50; b[0x81] = 0x45; b[0x84] = 0x64; b[0x85] = 0x86
         return Data(b)
     }
+    static func pe32() -> Data {
+        var b = [UInt8](repeating: 0, count: 512)
+        b[0] = 0x4d; b[1] = 0x5a; b[0x3c] = 0x80
+        b[0x80] = 0x50; b[0x81] = 0x45; b[0x84] = 0x4c; b[0x85] = 0x01
+        return Data(b)
+    }
     static func bridgeDLL() -> Data { pe64() + Data("cfb-bridge-v3 CFBUID=0".utf8) + Data(count: 24) }
+    static func bridgeDLL32() -> Data { pe32() + Data("cfb-bridge-v3 CFBUID=0".utf8) + Data(count: 24) }
 
     func makeGame(registry: String = "WINE REGISTRY Version 2\n;; All keys relative to \\\\User\\\\S-1-5-21\n\n#arch=win64\n\n[Software\\\\Wine] 1700000000\n#time=1\n\"Version\"=\"win10\"\n") throws -> GameEntry {
         let pfx = root.appendingPathComponent("pfx"), game = root.appendingPathComponent("SSD Games/My Game")
@@ -26,7 +33,7 @@ final class InstallerTests: XCTestCase {
         return GameEntry(name: "Game", executable: game.appendingPathComponent("Game-Win64.exe"), prefix: WinePrefix(url: pfx, label: "test"), source: "test", known: false, telemetry: false)
     }
     func installer() -> BridgeInstaller {
-        var i = BridgeInstaller(payload: Self.bridgeDLL(), stateDirectory: root.appendingPathComponent("state"))
+        var i = BridgeInstaller(payload: Self.bridgeDLL(), payload32: Self.bridgeDLL32(), stateDirectory: root.appendingPathComponent("state"))
         i.uid = 501; i.wineTemp = root
         return i
     }
@@ -102,6 +109,35 @@ final class InstallerTests: XCTestCase {
         XCTAssertThrowsError(try installer().install(game)) { XCTAssertEqual($0 as? BridgeInstaller.Failure, .noPrefix) }
     }
 
+    func testWin32InstallAndSameFolderArchConflict() throws {
+        let game64 = try makeGame()
+        let i = installer()
+        // 32-bit launcher in its own folder (e.g. Content Manager) installs the 32-bit bridge cleanly.
+        let cmDir = root.appendingPathComponent("ContentManager")
+        try FileManager.default.createDirectory(at: cmDir, withIntermediateDirectories: true)
+        let cmExe = cmDir.appendingPathComponent("Content Manager.exe")
+        try Self.pe32().write(to: cmExe)
+        let cm = GameEntry(name: "Content Manager", executable: cmExe, prefix: game64.prefix, source: "test", known: false, telemetry: false)
+        XCTAssertEqual(PE.architecture(cmExe), .x86)
+        XCTAssertEqual(i.status(cm), .notInstalled)
+        try i.install(cm)
+        XCTAssertEqual(i.status(cm), .installed)
+        let cmDLL = cmDir.appendingPathComponent("dinput8.dll")
+        XCTAssertEqual(PE.architecture(cmDLL), .x86)
+        try i.uninstall(cm)
+        XCTAssertEqual(i.status(cm), .notInstalled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cmDLL.path))
+
+        // 32-bit launcher in the SAME folder as an installed 64-bit game refuses to clobber the 64-bit DLL.
+        try i.install(game64)
+        let launcherExe = game64.executable.deletingLastPathComponent().appendingPathComponent("AssettoCorsa.exe")
+        try Self.pe32().write(to: launcherExe)
+        let launcher = GameEntry(name: "AC Launcher", executable: launcherExe, prefix: game64.prefix, source: "test", known: false, telemetry: false)
+        XCTAssertEqual(i.status(launcher), .otherDLL)
+        XCTAssertThrowsError(try i.install(launcher)) { XCTAssertEqual($0 as? BridgeInstaller.Failure, .archConflict) }
+        XCTAssertEqual(i.status(game64), .installed)
+    }
+
     func testBinaryShortcutsAndTextVDF() {
         var d = Data([0x00]) + Data("shortcuts\0".utf8) + Data([0x00]) + Data("0\0".utf8)
         d += Data([0x02]) + Data("appid\0".utf8) + Data([0xd4, 0x19, 0xb1, 0x94])
@@ -144,5 +180,47 @@ final class InstallerTests: XCTestCase {
         let evoGame = try XCTUnwrap(games.first { $0.name == "Assetto Corsa EVO" })
         XCTAssertEqual(evoGame.prefix.url.path, bottle.path)
         XCTAssertEqual(GameLibrary(home: home).prefix(for: evoGame.executable, among: [])?.url.resolvingSymlinksInPath().path, bottle.resolvingSymlinksInPath().path)
+    }
+
+    func testDiscoveryFindsContentManagerInACPrefixAndCrossOverBottle() throws {
+        let fm = FileManager.default
+        let home = root.appendingPathComponent("home-cm")
+        let steam = home.appendingPathComponent("Library/Application Support/Steam")
+        let acFolder = steam.appendingPathComponent("steamapps/common/assettocorsa")
+        let acPfx = steam.appendingPathComponent("steamapps/compatdata/244210/pfx")
+        try fm.createDirectory(at: acFolder, withIntermediateDirectories: true)
+        try fm.createDirectory(at: acPfx.appendingPathComponent("drive_c/ContentManager"), withIntermediateDirectories: true)
+        try "WINE".write(to: acPfx.appendingPathComponent("user.reg"), atomically: true, encoding: .utf8)
+        try "\"AppState\"\n{\n\"appid\" \"244210\"\n\"name\" \"Assetto Corsa\"\n\"installdir\" \"assettocorsa\"\n}\n".write(
+            to: steam.appendingPathComponent("steamapps/appmanifest_244210.acf"), atomically: true, encoding: .utf8)
+        try Self.pe64().write(to: acFolder.appendingPathComponent("acs.exe"))
+        // A Content Manager dropped right next to acs.exe must NOT be auto-added (would conflict with 64-bit acs.exe).
+        try Self.pe32().write(to: acFolder.appendingPathComponent("Content Manager.exe"))
+        // Content Manager in its own folder inside the AC prefix SHOULD be discovered.
+        let cmInPfx = acPfx.appendingPathComponent("drive_c/ContentManager/Content Manager.exe")
+        try Self.pe32().write(to: cmInPfx)
+
+        // Content Manager on Desktop inside a CrossOver bottle SHOULD also be discovered.
+        let bottle = home.appendingPathComponent("Library/Application Support/CrossOver/Bottles/AC")
+        let desktop = bottle.appendingPathComponent("drive_c/users/crossover/Desktop")
+        try fm.createDirectory(at: desktop, withIntermediateDirectories: true)
+        try "WINE".write(to: bottle.appendingPathComponent("user.reg"), atomically: true, encoding: .utf8)
+        let cmInBottle = desktop.appendingPathComponent("Content Manager.exe")
+        try Self.pe32().write(to: cmInBottle)
+
+        let games = GameLibrary(home: home).discover()
+        let cms = games.filter { $0.name == "Assetto Corsa Content Manager" }
+        XCTAssertEqual(cms.count, 2)
+        let paths = Set(cms.map { $0.executable.standardizedFileURL.path })
+        XCTAssertTrue(paths.contains(cmInPfx.standardizedFileURL.path))
+        XCTAssertTrue(paths.contains(cmInBottle.standardizedFileURL.path))
+        XCTAssertFalse(paths.contains(acFolder.appendingPathComponent("Content Manager.exe").standardizedFileURL.path))
+
+        // Verify installing the 32-bit bridge onto the discovered Content Manager succeeds.
+        let inst = installer()
+        let discoveredCM = try XCTUnwrap(cms.first { $0.executable.standardizedFileURL.path == cmInPfx.standardizedFileURL.path })
+        try inst.install(discoveredCM)
+        XCTAssertEqual(inst.status(discoveredCM), .installed)
+        XCTAssertEqual(PE.architecture(cmInPfx.deletingLastPathComponent().appendingPathComponent("dinput8.dll")), .x86)
     }
 }

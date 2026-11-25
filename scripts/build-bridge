@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build the Win64 dinput8.dll bridge and run its offline unit tests.
+# Build the Win64 and Win32 dinput8.dll bridges and run the offline unit tests.
 set -eu
 cd "${0:A:h:h}"
 # Needs Homebrew LLVM (clang, llvm-dlltool, llvm-readobj) and a COFF linker: lld-link
@@ -23,13 +23,19 @@ bridge/build/test-bridge
 "$llvm_bin/llvm-dlltool" -m i386:x86-64 -d bridge/kernel32.def -l bridge/build/kernel32.lib
 "${link[@]}" /Brepro /dll /nodefaultlib /machine:x64 /entry:DllMain /dynamicbase /nxcompat /out:bridge/build/dinput8.dll /def:bridge/exports.def bridge/build/observe.obj bridge/build/kernel32.lib
 "$llvm_bin/llvm-readobj" --file-headers --coff-imports --coff-exports bridge/build/dinput8.dll > bridge/build/pe-inspection.txt
+"$llvm_bin/clang" --target=i686-pc-windows-msvc -march=pentium4 -std=c11 -O2 -ffreestanding -fno-builtin -fno-stack-protector -Wall -Wextra -Werror -c bridge/observe.c -o bridge/build/observe-x86.obj
+"$llvm_bin/llvm-dlltool" -m i386 -k -d bridge/kernel32-x86.def -l bridge/build/kernel32-x86.lib
+"${link[@]}" /Brepro /dll /nodefaultlib /machine:x86 /entry:DllMain@12 /dynamicbase /nxcompat /out:bridge/build/dinput8-x86.dll /def:bridge/exports-x86.def bridge/build/observe-x86.obj bridge/build/kernel32-x86.lib
+"$llvm_bin/llvm-readobj" --file-headers --coff-imports --coff-exports bridge/build/dinput8-x86.dll > bridge/build/pe-inspection-x86.txt
 python3 - <<'PY'
 from pathlib import Path
-s=Path('bridge/build/pe-inspection.txt').read_text()
-assert 'IMAGE_FILE_MACHINE_AMD64' in s
-assert s.count('Import {')==1 and 'Name: KERNEL32.dll' in s
-for export in ['DirectInput8Create','DllCanUnloadNow','DllGetClassObject','DllRegisterServer','DllUnregisterServer']:
-    assert export in s
-print('PASS: x64 PE dinput8.dll, KERNEL32-only imports')
+for path, arch in [('bridge/build/pe-inspection.txt', 'IMAGE_FILE_MACHINE_AMD64'),
+                   ('bridge/build/pe-inspection-x86.txt', 'IMAGE_FILE_MACHINE_I386')]:
+    s = Path(path).read_text()
+    assert arch in s, f'missing {arch} in {path}'
+    assert s.count('Import {') == 1 and 'Name: KERNEL32.dll' in s, f'unexpected imports in {path}'
+    for export in ['DirectInput8Create', 'DllCanUnloadNow', 'DllGetClassObject', 'DllRegisterServer', 'DllUnregisterServer']:
+        assert export in s, f'missing export {export} in {path}'
+print('PASS: x64 + x86 PE dinput8 bridges, KERNEL32-only imports')
 PY
-print "Built bridge/build/dinput8.dll"
+print "Built bridge/build/dinput8.dll and bridge/build/dinput8-x86.dll"

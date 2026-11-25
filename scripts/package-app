@@ -16,9 +16,11 @@ app_dir="$PWD/dist/crossover-ffb.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/CrossoverFFBApp" "$app_dir/Contents/MacOS/CrossoverFFBApp"
 # SwiftPM resources used by the model-specific rim preview.
+rm -rf "$app_dir/Contents/Resources/crossover-ffb_CrossoverFFBApp.bundle"
 cp -R "$binary_dir/crossover-ffb_CrossoverFFBApp.bundle" "$app_dir/Contents/Resources/"
 cp "$binary_dir/crossover-ffb" "$app_dir/Contents/MacOS/crossover-ffb"
 cp bridge/build/dinput8.dll "$app_dir/Contents/Resources/dinput8.dll"
+cp bridge/build/dinput8-x86.dll "$app_dir/Contents/Resources/dinput8-x86.dll"
 # App icon, generated from scripts/app-icon.swift.
 rm -rf .build/AppIcon.iconset
 swiftc -O scripts/app-icon.swift -o .build/app-icon

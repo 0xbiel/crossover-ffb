@@ -12,15 +12,16 @@ public struct BridgeInstaller: Sendable {
         case missing         // exe no longer there
     }
     public enum Failure: LocalizedError, Equatable {
-        case wineRunning, noPrefix, notWindows64, unsupportedName, backupInTheWay, bridgeMissing, io(String)
+        case wineRunning, noPrefix, notWindows64, unsupportedName, backupInTheWay, archConflict, bridgeMissing, io(String)
         public var errorDescription: String? {
             switch self {
             case .wineRunning: "This game's Wine session is still running. Quit the game (and Steam or CrossOver for that bottle), wait a few seconds, then try again."
             case .noPrefix: "Its Wine prefix does not exist yet. Launch the game once, quit it, then install."
-            case .notWindows64: "That file is not a 64-bit Windows game executable."
+            case .notWindows64: "That file is not a 32-bit or 64-bit Windows game executable."
             case .unsupportedName: "The executable name contains characters the Wine registry entry cannot hold."
             case .backupInTheWay: "The game folder already has a dinput8.dll backup from an earlier install. Remove dinput8.dll.crossover-ffb-original first."
-            case .bridgeMissing: "The bridge DLL is missing from the app."
+            case .archConflict: "This folder already has a crossover-ffb bridge for a different architecture (32-bit vs 64-bit). Put the 32-bit launcher (such as Content Manager) in its own folder so both can load their matching dinput8.dll."
+            case .bridgeMissing: "The bridge DLL for this executable's architecture is missing from the app."
             case .io(let message): message
             }
         }
@@ -30,12 +31,13 @@ public struct BridgeInstaller: Sendable {
     static let marker = Data("cfb-bridge-v".utf8)
     static let backupName = "dinput8.dll.crossover-ffb-original"
 
-    public var payload: Data // the unpatched DLL shipped with the app
+    public var payload: Data   // the unpatched 64-bit DLL shipped with the app
+    public var payload32: Data // the unpatched 32-bit DLL shipped with the app
     public var stateDirectory: URL
     public var uid: UInt32 = getuid()
     public var wineTemp = URL(fileURLWithPath: "/tmp")
-    public init(payload: Data, stateDirectory: URL = BridgeInstaller.defaultStateDirectory) {
-        self.payload = payload; self.stateDirectory = stateDirectory
+    public init(payload: Data, payload32: Data = Data(), stateDirectory: URL = BridgeInstaller.defaultStateDirectory) {
+        self.payload = payload; self.payload32 = payload32; self.stateDirectory = stateDirectory
     }
     public static var defaultStateDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/crossover-ffb")
@@ -43,6 +45,7 @@ public struct BridgeInstaller: Sendable {
 
     /// The DLL as installed for this Mac user (shared-memory path carries the uid).
     public var patchedPayload: Data { Self.patch(payload, uid: uid) }
+    public func patchedPayload(for arch: PE.Arch) -> Data { Self.patch(arch == .x64 ? payload : payload32, uid: uid) }
     static func patch(_ dll: Data, uid: UInt32) -> Data {
         var bytes = [UInt8](dll)
         let tag = Array("CFBUID=".utf8)
@@ -58,38 +61,57 @@ public struct BridgeInstaller: Sendable {
     public func status(_ game: GameEntry) -> Status {
         let fm = FileManager.default
         guard fm.fileExists(atPath: game.executable.path) else { return .missing }
+        guard let arch = PE.architecture(game.executable) else { return .notInstalled }
         let dll = dllURL(game)
         let present = try? Data(contentsOf: dll)
-        if let present, !Self.isOurs(present) { return game.prefix.exists ? .otherDLL : .needsFirstLaunch }
+        if let present {
+            if !Self.isOurs(present) { return game.prefix.exists ? .otherDLL : .needsFirstLaunch }
+            if let dllArch = PE.architecture(of: present), dllArch != arch {
+                return game.prefix.exists ? .otherDLL : .needsFirstLaunch
+            }
+        }
         guard game.prefix.exists else { return .needsFirstLaunch }
         guard let present else { return .notInstalled }
         let registry = (try? String(contentsOf: registryURL(game), encoding: .utf8)).map(UserRegistry.init)
         let value = registry?.value(section: Self.sectionName(game), name: "dinput8")
-        if present != patchedPayload || !(value?.lowercased().hasPrefix("native") ?? false) { return .outdated }
+        if present != patchedPayload(for: arch) || !(value?.lowercased().hasPrefix("native") ?? false) { return .outdated }
         return .installed
     }
 
     // MARK: install / uninstall
 
     public func install(_ game: GameEntry) throws {
-        guard payload.count > 2, payload.prefix(2) == Data("MZ".utf8) else { throw Failure.bridgeMissing }
-        guard PE.isWin64(game.executable) else { throw Failure.notWindows64 }
+        guard let arch = PE.architecture(game.executable) else { throw Failure.notWindows64 }
+        let raw = arch == .x64 ? payload : payload32
+        guard raw.count > 2, raw.prefix(2) == Data("MZ".utf8), PE.architecture(of: raw) == arch else { throw Failure.bridgeMissing }
         guard game.prefix.exists else { throw Failure.noPrefix }
         guard Self.validName(game.executable.lastPathComponent) else { throw Failure.unsupportedName }
         try ensureNotRunning(game)
         let fm = FileManager.default
         let dll = dllURL(game), backup = dll.deletingLastPathComponent().appendingPathComponent(Self.backupName)
-        var record = loadRecords()[game.id] ?? Record(executable: game.executable.path, prefix: game.prefix.url.path)
+        let records = loadRecords()
+        var record = records[game.id] ?? Record(executable: game.executable.path, prefix: game.prefix.url.path)
 
         if let backupData = try? Data(contentsOf: backup), Self.isOurs(backupData) {
             try wrap { try fm.removeItem(at: backup) }
         }
-        if let existing = try? Data(contentsOf: dll), !Self.isOurs(existing) {
-            guard !fm.fileExists(atPath: backup.path) else { throw Failure.backupInTheWay }
-            try wrap { try fm.moveItem(at: dll, to: backup) }
-            record.keptOriginalDLL = true
+        if let existing = try? Data(contentsOf: dll) {
+            if Self.isOurs(existing) {
+                if let dllArch = PE.architecture(of: existing), dllArch != arch {
+                    let folder = dll.deletingLastPathComponent().standardizedFileURL
+                    let anotherInstalled = records.values.contains {
+                        $0.executable != game.executable.path &&
+                        URL(fileURLWithPath: $0.executable).deletingLastPathComponent().standardizedFileURL == folder
+                    }
+                    if anotherInstalled { throw Failure.archConflict }
+                }
+            } else {
+                guard !fm.fileExists(atPath: backup.path) else { throw Failure.backupInTheWay }
+                try wrap { try fm.moveItem(at: dll, to: backup) }
+                record.keptOriginalDLL = true
+            }
         }
-        try wrap { try Self.atomicWrite(patchedPayload, to: dll) }
+        try wrap { try Self.atomicWrite(Self.patch(raw, uid: uid), to: dll) }
 
         let reg = registryURL(game)
         let before = try wrap { try String(contentsOf: reg, encoding: .utf8) }

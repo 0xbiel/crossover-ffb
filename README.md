@@ -55,7 +55,7 @@ bridge must both be 0.3.0 for the G29 identity.
 | **Not supported yet** | G923 for Xbox (`c26e`, `c26d`), RS50 (`c276`), G PRO (`c268`), and `c272`, which RS50 and G PRO share. Shown in the app, never driven. |
 | **macOS** | 13 Ventura or later on Apple Silicon. Liquid Glass on macOS 26 and later. |
 | **Runners** | Steam games through **NotProton**, **CrossOver** bottles (including Steam inside a bottle), any other Wine prefix via **Add Game** |
-| **Games** | Any **64-bit** game that reads its wheel through **DirectInput 8**, which covers most PC sims |
+| **Games** | Any **32-bit or 64-bit** game (or launcher) that reads its wheel through **DirectInput 8**, which covers most PC sims |
 
 | Game | Force feedback | TrueForce |
 |---|---|---|
@@ -66,7 +66,7 @@ bridge must both be 0.3.0 for the G29 identity.
 
 "Should work" means the game uses DirectInput 8 but nobody has reported on it yet. If you try
 one, please [file a game report](../../issues/new?template=game-report.md). Games that only
-use XInput or raw HID, and 32-bit games, aren't supported.
+use XInput or raw HID aren't supported.
 
 ## Install
 
@@ -96,6 +96,29 @@ To remove it, uninstall the bridge from each game in the Library, then delete th
 For ACC, the default G923 preset already matches the layout: steering axis 0, throttle 1,
 brake 5, clutch 6. Coming from 0.2.x with a G29, select the wheel again in each game, because
 older versions presented it as a G923.
+
+### Assetto Corsa & Content Manager
+
+Assetto Corsa splits its menu and driving engine into two separate executables:
+`AssettoCorsa.exe` and `Content Manager.exe` are **32-bit**, while `acs.exe` (the driving
+simulation) is **64-bit**. Because Windows cannot load two `dinput8.dll` files of different
+architectures from the same folder, installing the bridge on `acs.exe` only overrides `acs.exe`.
+If a 32-bit launcher binds your wheel through Wine's built-in DirectInput driver instead, it can
+save raw macOS HID axis numbers (`Z` for throttle, `Y` for clutch) that do not match the Windows
+Logitech axis layout `acs.exe` receives (`Y` throttle = axis 1, `Rz` brake = axis 5, `Slider0`
+clutch = axis 6).
+
+Two ways to keep them in sync:
+
+- **With Content Manager (recommended):** keep `Content Manager.exe` in its own folder (not
+  inside the `assettocorsa` folder alongside `acs.exe`). crossover-ffb auto-discovers
+  `Content Manager.exe` in common prefix folders (`C:\ContentManager`, `Program Files`,
+  `Desktop`, `Downloads`, `Documents`) — or use **Add Game** if you placed it elsewhere — and
+  installs the 32-bit bridge onto it. Both Content Manager and `acs.exe` then see the exact same
+  virtual wheel (`JOY=0`, axes `0 / 1 / 5 / 6`).
+- **With the stock launcher (or without installing on Content Manager):** load Assetto Corsa's
+  built-in **Logitech G29** preset (which already uses axes `0 / 1 / 5 / 6`), and make sure
+  `controls.ini` uses `JOY=0` for steering, pedals and buttons.
 
 ### Steering & pedals
 

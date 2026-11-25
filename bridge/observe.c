@@ -1,19 +1,54 @@
-/* Original MIT-licensed DirectInput8 bridge: a virtual G923 fed by the native
+/* Original MIT-licensed DirectInput8 bridge: a virtual G29/G923 fed by the native
  * crossover-ffb app over shared memory, whose force-feedback effects the app
  * plays on the real wheel. Other devices pass through to the system dinput8.
- * Win64 ABI declarations checked against public DirectInput interfaces; no
+ * Win32/Win64 ABI declarations checked against public DirectInput interfaces; no
  * upstream implementation copied. */
 typedef unsigned int U32;
 typedef int HR;
 typedef unsigned short U16;
 typedef unsigned long long U64;
+typedef __UINTPTR_TYPE__ UPTR;
 typedef void *PTR;
+#ifdef __i386__
+#define STDCALL __attribute__((stdcall))
+#else
+#define STDCALL
+#endif
+#define INVALID_HANDLE ((PTR)(~(UPTR)0))
 typedef struct {
     U32 a;
     U16 b, c;
     unsigned char d[8];
 } GUID;
-_Static_assert(sizeof(GUID) == 16 && sizeof(U32) == 4 && sizeof(PTR) == 8, "Win64 ABI");
+_Static_assert(sizeof(GUID) == 16 && sizeof(U32) == 4 && sizeof(PTR) == sizeof(UPTR) &&
+                   (sizeof(PTR) == 4 || sizeof(PTR) == 8),
+               "Win32/Win64 ABI");
+static U64 udiv64(U64 n, U64 d) {
+#ifdef __i386__
+    U64 q = 0, r = 0;
+    for (int i = 63; i >= 0; i--) {
+        r = (r << 1) | ((n >> i) & 1u);
+        if (r >= d) {
+            r -= d;
+            q |= 1ull << i;
+        }
+    }
+    return q;
+#else
+    return n / d;
+#endif
+}
+static long long sdiv64(long long n, long long d) {
+#ifdef __i386__
+    int neg = (n < 0) ^ (d < 0);
+    U64 an = n < 0 ? 0ull - (U64)n : (U64)n;
+    U64 ad = d < 0 ? 0ull - (U64)d : (U64)d;
+    U64 q = udiv64(an, ad);
+    return neg ? -(long long)q : (long long)q;
+#else
+    return n / d;
+#endif
+}
 #define OK ((HR)0)
 #define NOINTERFACE ((HR)0x80004002u)
 #define POINTER ((HR)0x80004003u)
@@ -48,18 +83,18 @@ extern void test_log(const char *, U32, const GUID *);
 #define event test_log
 #else
 #define IMPORT __declspec(dllimport)
-IMPORT U32 GetModuleFileNameW(PTR, U16 *, U32);
-IMPORT PTR CreateFileW(const U16 *, U32, U32, PTR, U32, U32, PTR);
-IMPORT int WriteFile(PTR, const void *, U32, U32 *, PTR);
-IMPORT int CloseHandle(PTR);
-IMPORT int GetFileSizeEx(PTR, long long *);
-IMPORT U32 GetCurrentProcessId(void);
-IMPORT U64 GetTickCount64(void);
-IMPORT int DisableThreadLibraryCalls(PTR);
-IMPORT void AcquireSRWLockExclusive(U64 *);
-IMPORT void ReleaseSRWLockExclusive(U64 *);
+IMPORT U32 STDCALL GetModuleFileNameW(PTR, U16 *, U32);
+IMPORT PTR STDCALL CreateFileW(const U16 *, U32, U32, PTR, U32, U32, PTR);
+IMPORT int STDCALL WriteFile(PTR, const void *, U32, U32 *, PTR);
+IMPORT int STDCALL CloseHandle(PTR);
+IMPORT int STDCALL GetFileSizeEx(PTR, long long *);
+IMPORT U32 STDCALL GetCurrentProcessId(void);
+IMPORT U64 STDCALL GetTickCount64(void);
+IMPORT int STDCALL DisableThreadLibraryCalls(PTR);
+IMPORT void STDCALL AcquireSRWLockExclusive(UPTR *);
+IMPORT void STDCALL ReleaseSRWLockExclusive(UPTR *);
 static PTR module;
-int DllMain(PTR h, U32 reason, PTR reserved) {
+int STDCALL DllMain(PTR h, U32 reason, PTR reserved) {
     (void)reserved;
     if (reason == 1) {
         module = h;
@@ -84,7 +119,7 @@ static void event(const char *method, U32 value, const GUID *guid) {
     }
     /* Only this adjacent regular log file is opened, never a device path. */
     PTR file = CreateFileW(path, 4 | 0x80, 3, 0, 4, 0x80, 0);
-    if (file == (PTR)(~(U64)0))
+    if (file == INVALID_HANDLE)
         return;
     long long size = 0;
     if (!GetFileSizeEx(file, &size) || size > 4 * 1024 * 1024) {
@@ -120,7 +155,7 @@ static void event(const char *method, U32 value, const GUID *guid) {
 
 #if !defined(CFB_TEST) && !defined(CFB_FAKEWIN)
 /* Freestanding aggregate initialization support, no CRT or dynamic loader. */
-void *memset(void *p, int value, U64 n) {
+void *memset(void *p, int value, UPTR n) {
     volatile unsigned char *q = p;
     while (n--)
         *q++ = (unsigned char)value;

@@ -95,7 +95,8 @@ final class AppModel: ObservableObject {
         wheel = defaults.data(forKey: "wheel").flatMap { try? JSONDecoder().decode(WheelSettings.self, from: $0) } ?? WheelSettings()
         motorDetected = defaults.double(forKey: "motorSign") != 0
         tfMotorDetected = defaults.double(forKey: "tfMotorSign") != 0
-        installer = BridgeInstaller(payload: Self.bundledBridge() ?? Data())
+        installer = BridgeInstaller(payload: Self.bundledBridge(name: "dinput8") ?? Data(),
+                                    payload32: Self.bundledBridge(name: "dinput8-x86") ?? Data())
 
         // Stop before timers, discovery, preference writes or any hardware startup.
         if preview { return }
@@ -140,12 +141,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The DLL shipped inside the app (Contents/Resources), or the dev build next to the sources.
-    static func bundledBridge() -> Data? {
-        if let url = Bundle.main.url(forResource: "dinput8", withExtension: "dll"), let data = try? Data(contentsOf: url) { return data }
+    /// A bridge DLL shipped inside the app (Contents/Resources), or the dev build next to the sources.
+    static func bundledBridge(name: String = "dinput8") -> Data? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "dll"), let data = try? Data(contentsOf: url) { return data }
         var dir = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
         for _ in 0..<6 {
-            if let data = try? Data(contentsOf: dir.appendingPathComponent("bridge/build/dinput8.dll")) { return data }
+            if let data = try? Data(contentsOf: dir.appendingPathComponent("bridge/build/\(name).dll")) { return data }
             dir.deleteLastPathComponent()
         }
         return nil
@@ -353,20 +354,20 @@ final class AppModel: ObservableObject {
 
     func revealInFinder(_ game: GameEntry) { NSWorkspace.shared.activateFileViewerSelecting([game.executable]) }
 
-    /// Lets the user add any 64-bit Windows game: pick its exe, the prefix is worked out when possible.
+    /// Lets the user add any 32-bit or 64-bit Windows game or launcher: pick its exe, the prefix is worked out when possible.
     func addGame(replacing original: GameEntry? = nil) {
         guard !isPreview else { return }
         let panel = NSOpenPanel()
         panel.title = original == nil ? "Choose the game's .exe" : "Choose the .exe that actually runs \(original!.name)"
-        panel.message = "Pick the Windows program of the game (for Unreal Engine games, the …-Win64-Shipping.exe inside Binaries/Win64)."
+        panel.message = "Pick the Windows program of the game or launcher (for Unreal Engine games, the …-Win64-Shipping.exe inside Binaries/Win64)."
         panel.allowedContentTypes = [.init(filenameExtension: "exe")!]
         panel.allowsOtherFileTypes = false
         panel.canChooseDirectories = false
         if let original { panel.directoryURL = original.executable.deletingLastPathComponent() }
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let exe = panel.url else { return }
-        guard PE.isWin64(exe) else {
-            notice = Notice(title: "Not a 64-bit Windows game", message: "\(exe.lastPathComponent) is not a 64-bit Windows executable. Only 64-bit DirectInput games are supported.")
+        guard PE.isSupportedWindows(exe) else {
+            notice = Notice(title: "Not a Windows executable", message: "\(exe.lastPathComponent) is not a 32-bit or 64-bit Windows executable.")
             return
         }
         if let original {

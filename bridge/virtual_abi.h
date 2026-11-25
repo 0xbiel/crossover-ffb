@@ -1,5 +1,5 @@
-/* Original minimal Win64 ABI declarations. Public interface facts checked against
- * Wine include/dinput.h; no implementation copied. Windows x64 has one calling convention. */
+/* Original minimal Win32/Win64 ABI declarations. Public interface facts checked against
+ * Wine include/dinput.h; no implementation copied. */
 typedef signed int I32;
 typedef struct {
     U32 size, flags, type, axes, buttons, povs, sample, resolution, firmware, hardware, driver;
@@ -67,7 +67,7 @@ typedef struct {
 } RangeProperty;
 typedef struct {
     U32 offset, data, timestamp, sequence;
-    U64 appData;
+    UPTR appData;
 } DeviceEvent;
 typedef struct {
     U32 size, attackLevel, attackTime, fadeLevel, fadeTime;
@@ -95,10 +95,15 @@ typedef struct {
 } EffectInfoW;
 _Static_assert(sizeof(Caps) == 44 && sizeof(InstanceA) == 580 && sizeof(InstanceW) == 1100,
                "device info ABI");
-_Static_assert(sizeof(ObjectA) == 316 && sizeof(ObjectW) == 576 && sizeof(ObjectFormat) == 24 &&
-                   sizeof(DataFormat) == 32,
+_Static_assert(sizeof(ObjectA) == 316 && sizeof(ObjectW) == 576 &&
+                   sizeof(ObjectFormat) == (sizeof(PTR) == 8 ? 24 : 16) &&
+                   sizeof(DataFormat) == (sizeof(PTR) == 8 ? 32 : 24),
                "object ABI");
-_Static_assert(sizeof(DeviceEvent) == 24 && sizeof(EffectParams) == 80, "effect ABI");
+_Static_assert(sizeof(DeviceEvent) == (sizeof(PTR) == 8 ? 24 : 20) &&
+                   sizeof(EffectParams) == (sizeof(PTR) == 8 ? 80 : 56),
+               "effect ABI");
+#define EFFECT_PARAMS_DX5_SIZE ((U32)__builtin_offsetof(EffectParams, startDelay))
+_Static_assert(EFFECT_PARAMS_DX5_SIZE == (sizeof(PTR) == 8 ? 72 : 52), "DX5 effect ABI");
 #define INPUTLOST ((HR)0x8007001eu)
 #define NOTACQUIRED ((HR)0x8007000cu)
 #define ACQUIRED ((HR)0x800700aau)

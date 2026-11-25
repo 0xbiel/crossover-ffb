@@ -38,14 +38,14 @@ static volatile unsigned char *shm_map(void) { return test_shm; }
 #define unix_ms test_unix_ms
 #define process_id test_pid
 #else
-IMPORT void GetSystemTimeAsFileTime(U64 *);
-IMPORT PTR CreateFileMappingW(PTR, PTR, U32, U32, U32, const U16 *);
-IMPORT PTR MapViewOfFile(PTR, U32, U32, U32, U64);
+IMPORT void STDCALL GetSystemTimeAsFileTime(U64 *);
+IMPORT PTR STDCALL CreateFileMappingW(PTR, PTR, U32, U32, U32, const U16 *);
+IMPORT PTR STDCALL MapViewOfFile(PTR, U32, U32, U32, UPTR);
 #define process_id GetCurrentProcessId
 static U64 unix_ms(void) {
     U64 clock = 0;
     GetSystemTimeAsFileTime(&clock);
-    return clock >= 116444736000000000ull ? (clock - 116444736000000000ull) / 10000 : 0;
+    return clock >= 116444736000000000ull ? udiv64(clock - 116444736000000000ull, 10000) : 0;
 }
 #ifndef CFB_USER_ID
 #define CFB_USER_ID 0
@@ -57,7 +57,8 @@ static U64 unix_ms(void) {
 static volatile char uidSlot[24] = "CFBUID=" CFB_STRING(CFB_USER_ID);
 static volatile unsigned char *shmView;
 static U32 shmBytes; /* SHM_SIZE, or SHM_FULL when the app made room for telemetry */
-static U64 shmRetryAt, shmLock;
+static U64 shmRetryAt;
+static UPTR shmLock;
 /* Map the native app's file once. Wine maps writable file views MAP_SHARED, so
  * both processes see each other's stores directly. Retries at most every 500 ms
  * while the app has not created the file yet. */
@@ -80,7 +81,7 @@ static volatile unsigned char *shm_map(void) {
         for (U32 i = 0; i < sizeof(tail); i++)
             path[n++] = (U16)tail[i];
         PTR f = CreateFileW(path, 0xC0000000u, 7, 0, 3, 0x80, 0);
-        if (f != (PTR)(~(U64)0)) {
+        if (f != INVALID_HANDLE) {
             long long size = 0;
             U32 bytes = GetFileSizeEx(f, &size) ? (size >= SHM_FULL ? SHM_FULL : size >= SHM_SIZE ? SHM_SIZE : 0) : 0;
             PTR mapping = bytes ? CreateFileMappingW(f, 0, 4, 0, bytes, 0) : 0;
@@ -176,7 +177,7 @@ static U32 physicsSource = 1;
 #define physics_view test_physics
 #define static_view test_static
 #else
-IMPORT PTR OpenFileMappingW(U32, int, const U16 *);
+IMPORT PTR STDCALL OpenFileMappingW(U32, int, const U16 *);
 static const unsigned char *physicsView;
 static U32 physicsSource;
 static U64 physicsRetryAt;

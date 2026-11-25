@@ -1,14 +1,49 @@
 import SwiftUI
 import WheelCore
 
+private final class WheelRimBundleToken {}
+
 /// User-supplied product depictions, generatively isolated for local preview.
 /// See Resources/Rims/NOTICE.txt: these images are not covered by the code's MIT license.
 @MainActor
 enum WheelRimAssets {
+    static let bundleName = "crossover-ffb_CrossoverFFBApp.bundle"
     private static let g29 = load("g29-rim")
     private static let g923 = load("g923-rim")
+
+    /// Resolves the resource bundle without calling SwiftPM's `Bundle.module`, which with
+    /// `--build-system native` only checks `Bundle.main.bundleURL` (the `.app` root) and the
+    /// build machine's `.build` path, calling `fatalError` when the bundle sits in
+    /// `Contents/Resources/` on another Mac.
+    static func resourceURL(
+        forResource name: String,
+        withExtension ext: String,
+        subdirectory: String? = "Rims",
+        main: Bundle = .main,
+        codeBundle: Bundle = Bundle(for: WheelRimBundleToken.self),
+        executableURL: URL = URL(fileURLWithPath: CommandLine.arguments[0])
+    ) -> URL? {
+        let executableDir = executableURL.resolvingSymlinksInPath().deletingLastPathComponent()
+        let bundleURLs: [URL?] = [
+            main.resourceURL?.appendingPathComponent(bundleName),
+            main.bundleURL.appendingPathComponent(bundleName),
+            executableDir.appendingPathComponent(bundleName),
+            codeBundle.resourceURL?.appendingPathComponent(bundleName),
+            codeBundle.bundleURL.appendingPathComponent(bundleName),
+            codeBundle.bundleURL.deletingLastPathComponent().appendingPathComponent(bundleName),
+        ]
+        var seen = Set<URL>()
+        for candidate in bundleURLs.compactMap({ $0?.standardizedFileURL }) where seen.insert(candidate).inserted {
+            if let bundle = Bundle(url: candidate),
+               let url = bundle.url(forResource: name, withExtension: ext, subdirectory: subdirectory) {
+                return url
+            }
+        }
+        return main.url(forResource: name, withExtension: ext, subdirectory: subdirectory)
+    }
+
     private static func load(_ name: String) -> NSImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Rims") else { return nil }
+        guard let url = resourceURL(forResource: name, withExtension: "png", subdirectory: "Rims") else { return nil }
         return NSImage(contentsOf: url)
     }
     static func image(for model: BridgeWheelModel?) -> NSImage? {

@@ -128,7 +128,8 @@ if command == "bridge-probe" {
 if command == "games" {
     // What the app's Games tab would show, without changing anything.
     let library = GameLibrary()
-    let installer = BridgeInstaller(payload: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8.dll"))) ?? Data())
+    let installer = BridgeInstaller(payload: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8.dll"))) ?? Data(),
+                                    payload32: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8-x86.dll"))) ?? Data())
     for game in library.discover() {
         print("\(game.name) [\(game.source)] \(installer.status(game))\n  exe: \(game.executable.path)\n  prefix: \(game.prefix.url.path)")
     }
@@ -137,7 +138,8 @@ if command == "games" {
 }
 if command == "install" || command == "uninstall", args.count == 2 {
     // Same installer as the app's Games tab; the argument matches a discovered game's name.
-    let installer = BridgeInstaller(payload: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8.dll"))) ?? Data())
+    let installer = BridgeInstaller(payload: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8.dll"))) ?? Data(),
+                                    payload32: (try? Data(contentsOf: URL(fileURLWithPath: "bridge/build/dinput8-x86.dll"))) ?? Data())
     let matches = GameLibrary().discover().filter { $0.name.localizedCaseInsensitiveContains(args[1]) }
     guard matches.count == 1, let game = matches.first else { fputs("Need exactly one game matching \(args[1]); found \(matches.map(\.name))\n", stderr); exit(2) }
     do { try command == "install" ? installer.install(game) : installer.uninstall(game) }

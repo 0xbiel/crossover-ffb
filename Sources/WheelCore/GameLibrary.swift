@@ -67,7 +67,24 @@ public struct GameLibrary {
         var games: [GameEntry] = []
         games += steamGames()
         games += steamShortcuts()
-        for bottle in crossOverBottles() { games += gamesInBottle(bottle) }
+        let bottles = crossOverBottles()
+        for bottle in bottles { games += gamesInBottle(bottle) }
+        let gameFolders = Set(games.map { $0.executable.deletingLastPathComponent().standardizedFileURL.path.lowercased() })
+        var cmPrefixes: [(WinePrefix, String)] = []
+        var seenPrefixes = Set<String>()
+        for g in games where g.steamAppID == 244210 && g.prefix.exists {
+            if seenPrefixes.insert(g.prefix.url.standardizedFileURL.path.lowercased()).inserted {
+                cmPrefixes.append((g.prefix, g.source))
+            }
+        }
+        for bottle in bottles where bottle.exists {
+            if seenPrefixes.insert(bottle.url.standardizedFileURL.path.lowercased()).inserted {
+                cmPrefixes.append((bottle, bottle.label))
+            }
+        }
+        for (prefix, source) in cmPrefixes {
+            games += contentManagers(in: prefix, source: source, excludingFolders: gameFolders)
+        }
         var seen = Set<String>()
         return games.filter { seen.insert($0.executable.standardizedFileURL.path.lowercased()).inserted }
             .sorted { ($0.known ? 0 : 1, $0.name.lowercased()) < ($1.known ? 0 : 1, $1.name.lowercased()) }
@@ -256,23 +273,78 @@ public struct GameLibrary {
         paths.map { folder.appendingPathComponent($0) }.first { fileManager.fileExists(atPath: $0.path) }
     }
 
-    /// Best guess at the main 64-bit game exe in an install folder: the largest PE32+ that is
-    /// not a crash handler, installer, redistributable or anti-cheat helper.
+    /// Scans common locations inside a Wine prefix for Assetto Corsa Content Manager
+    /// (excluding any folder that already hosts another game executable, such as acs.exe).
+    func contentManagers(in prefix: WinePrefix, source: String, excludingFolders: Set<String>) -> [GameEntry] {
+        let driveC = prefix.url.appendingPathComponent("drive_c")
+        guard fileManager.fileExists(atPath: driveC.path) else { return [] }
+        var candidateDirs: [URL] = [
+            "ContentManager",
+            "Content Manager",
+            "Program Files/Content Manager",
+            "Program Files/ContentManager",
+            "Program Files (x86)/Content Manager",
+            "Program Files (x86)/ContentManager",
+            "Games/Content Manager",
+            "Games/ContentManager",
+        ].map { driveC.appendingPathComponent($0) }
+
+        let usersDir = driveC.appendingPathComponent("users")
+        for user in (try? fileManager.contentsOfDirectory(atPath: usersDir.path)) ?? [] {
+            let lower = user.lowercased()
+            if lower == "public" || lower.hasPrefix(".") { continue }
+            let userRoot = usersDir.appendingPathComponent(user)
+            for sub in [
+                "Desktop", "Desktop/Content Manager", "Desktop/ContentManager",
+                "Downloads", "Downloads/Content Manager", "Downloads/ContentManager",
+                "Documents", "Documents/Content Manager", "Documents/ContentManager",
+            ] {
+                candidateDirs.append(userRoot.appendingPathComponent(sub))
+            }
+        }
+
+        var out: [GameEntry] = []
+        for dir in candidateDirs {
+            guard fileManager.fileExists(atPath: dir.path) else { continue }
+            guard !excludingFolders.contains(dir.standardizedFileURL.path.lowercased()) else { continue }
+            guard let items = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isRegularFileKey]) else { continue }
+            for item in items where item.lastPathComponent.lowercased() == "content manager.exe" {
+                guard PE.isSupportedWindows(item) else { continue }
+                out.append(GameEntry(
+                    name: "Assetto Corsa Content Manager",
+                    executable: item,
+                    prefix: prefix,
+                    source: source,
+                    known: true,
+                    telemetry: false,
+                    steamAppID: nil
+                ))
+            }
+        }
+        return out
+    }
+
+    /// Best guess at the main game exe in an install folder: prefers the largest 64-bit PE32+,
+    /// falling back to the largest 32-bit PE32, skipping crash handlers, installers and helpers.
     public static func guessExecutable(in folder: URL, fileManager: FileManager = .default) -> URL? {
         let skip = ["crash", "unins", "setup", "redist", "vc_redist", "vcredist", "dxsetup", "dotnet", "easyanticheat", "eac", "beservice", "battleye", "helper", "report", "cef", "webengine", "install", "update", "dxwebsetup", "physx", "ue4prereq", "uninstall"]
         guard let walker = fileManager.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey], options: [.skipsHiddenFiles]) else { return nil }
-        var best: (URL, Int)?
+        var best64: (URL, Int)?
+        var best32: (URL, Int)?
         for case let url as URL in walker {
             if walker.level > 4 { walker.skipDescendants(); continue }
             guard url.pathExtension.lowercased() == "exe" else { continue }
             let lower = url.lastPathComponent.lowercased()
             if skip.contains(where: lower.contains) { continue }
             if url.pathComponents.contains(where: { ["_commonredist", "redist", "redistributables", "directx", "support", "engine/extras"].contains($0.lowercased()) }) { continue }
-            guard PE.isWin64(url) else { continue }
+            guard let arch = PE.architecture(url) else { continue }
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if size > best?.1 ?? -1 { best = (url, size) }
+            switch arch {
+            case .x64: if size > best64?.1 ?? -1 { best64 = (url, size) }
+            case .x86: if size > best32?.1 ?? -1 { best32 = (url, size) }
+            }
         }
-        return best?.0
+        return best64?.0 ?? best32?.0
     }
 
     /// Wine drive letters of a prefix, from dosdevices symlinks.
@@ -296,21 +368,47 @@ public struct GameLibrary {
 }
 
 public enum PE {
-    /// True for a 64-bit (x86-64) Windows executable.
-    public static func isWin64(_ url: URL) -> Bool {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+    public enum Arch: Equatable, Sendable { case x64, x86 }
+
+    /// Detects whether a PE file is x86-64 (`.x64`) or 32-bit x86 (`.x86`).
+    public static func architecture(_ url: URL) -> Arch? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        guard let head = try? handle.read(upToCount: 1024), head.count >= 0x40 else { return false }
+        guard let head = try? handle.read(upToCount: 1024), head.count >= 0x40 else { return nil }
         let bytes = [UInt8](head)
-        guard bytes[0] == 0x4d, bytes[1] == 0x5a else { return false }
+        guard bytes[0] == 0x4d, bytes[1] == 0x5a else { return nil }
         let off = Int(bytes[0x3c]) | Int(bytes[0x3d]) << 8 | Int(bytes[0x3e]) << 16 | Int(bytes[0x3f]) << 24
-        var pe = bytes
-        if off + 6 > bytes.count {
-            guard (try? handle.seek(toOffset: UInt64(off))) != nil, let more = try? handle.read(upToCount: 6), more.count == 6 else { return false }
-            pe = [UInt8](repeating: 0, count: off) + [UInt8](more)
+        guard off >= 0 else { return nil }
+        let header: [UInt8]
+        if off + 6 <= bytes.count {
+            header = Array(bytes[off..<off + 6])
+        } else {
+            guard (try? handle.seek(toOffset: UInt64(off))) != nil, let more = try? handle.read(upToCount: 6), more.count == 6 else { return nil }
+            header = [UInt8](more)
         }
-        return pe[off] == 0x50 && pe[off + 1] == 0x45 && pe[off + 2] == 0 && pe[off + 3] == 0 && pe[off + 4] == 0x64 && pe[off + 5] == 0x86
+        return machine(header)
     }
+
+    public static func architecture(of data: Data) -> Arch? {
+        guard data.count >= 0x40 else { return nil }
+        let bytes = [UInt8](data.prefix(0x40))
+        guard bytes[0] == 0x4d, bytes[1] == 0x5a else { return nil }
+        let off = Int(bytes[0x3c]) | Int(bytes[0x3d]) << 8 | Int(bytes[0x3e]) << 16 | Int(bytes[0x3f]) << 24
+        guard off >= 0, off + 6 <= data.count else { return nil }
+        return machine([UInt8](data[off..<off + 6]))
+    }
+
+    private static func machine(_ header: [UInt8]) -> Arch? {
+        guard header.count == 6, header[0] == 0x50, header[1] == 0x45, header[2] == 0, header[3] == 0 else { return nil }
+        if header[4] == 0x64 && header[5] == 0x86 { return .x64 }
+        if header[4] == 0x4c && header[5] == 0x01 { return .x86 }
+        return nil
+    }
+
+    /// True for a 64-bit (x86-64) Windows executable.
+    public static func isWin64(_ url: URL) -> Bool { architecture(url) == .x64 }
+    /// True for a 32-bit or 64-bit x86 Windows executable.
+    public static func isSupportedWindows(_ url: URL) -> Bool { architecture(url) != nil }
 }
 
 /// Minimal readers for Steam's text and binary KeyValues formats.
